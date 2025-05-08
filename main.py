@@ -22,14 +22,12 @@ from telegram.ext import (
     filters,
     ContextTypes,
     PicklePersistence,
-    # If using updater explicitly, Updater might be needed from here for older versions
-    # For v20, Application is the main object.
 )
 
 # --- Attempt to import configurations and handlers ---
 try:
     from config.settings import (
-        BOT_TOKEN, WEBHOOK_URL, PORT, # PORT is used directly in the new webhook logic
+        BOT_TOKEN, WEBHOOK_URL, PORT,
         WEBHOOK_PATH as CFG_WEBHOOK_PATH,
         ADMIN_CHAT_ID, DEVELOPMENT_MODE, USE_WEBHOOK,
         LOG_FILE_PATH
@@ -82,9 +80,9 @@ except ImportError as e:
     logger.critical(f"CRITICAL: Failed to import or validate state definitions from utils.state_definitions.py: {e}. THIS IS FATAL.")
     STEP_2_AWAITING_REVIEW_CHOICE_STATE, STEP_4_AWAITING_USER_DECISION_STATE = 0, 1
     STEP_5_CTA_TEXT_INPUT_STATE, STEP_5_FINAL_CHANCE_STATE = 2, 3
-    AWAITING_STEP_TWO_ACK = STEP_2_AWAITING_REVIEW_CHOICE_STATE # Alias from your state_definitions
-    AWAITING_STEP_FIVE_CHOICE = STEP_5_CTA_TEXT_INPUT_STATE     # Alias
-    STEP_5_AWAITING_FINAL_ACTION = STEP_5_FINAL_CHANCE_STATE  # Alias
+    AWAITING_STEP_TWO_ACK = STEP_2_AWAITING_REVIEW_CHOICE_STATE
+    AWAITING_STEP_FIVE_CHOICE = STEP_5_CTA_TEXT_INPUT_STATE
+    STEP_5_AWAITING_FINAL_ACTION = STEP_5_FINAL_CHANCE_STATE
     STATE_NAME_MAP = {
         STEP_2_AWAITING_REVIEW_CHOICE_STATE: "FALLBACK_S2_REVIEW_CHOICE",
         STEP_4_AWAITING_USER_DECISION_STATE: "FALLBACK_S4_USER_DECISION",
@@ -122,18 +120,17 @@ except ImportError:
 
 # --- Global Variables ---
 shutdown_event = asyncio.Event()
-application: Application | None = None # For PTB v20, this is correct. For v13, you'd use Updater.
+application: Application | None = None
 FINAL_WEBHOOK_PATH = None
 
 # --- Secure Webhook Path Generation ---
 def setup_secure_webhook_path() -> None:
     global FINAL_WEBHOOK_PATH
     if not USE_WEBHOOK or not WEBHOOK_URL:
-        FINAL_WEBHOOK_PATH = "webhook_path_not_set_or_needed" # Default placeholder
+        FINAL_WEBHOOK_PATH = "webhook_path_not_set_or_needed"
         logger.info("Webhook path generation skipped (not in webhook mode or WEBHOOK_URL not set).")
         return
 
-    # Use user-configured path if valid, otherwise generate one
     if CFG_WEBHOOK_PATH and CFG_WEBHOOK_PATH.startswith("/") and len(CFG_WEBHOOK_PATH) > 1:
         FINAL_WEBHOOK_PATH = CFG_WEBHOOK_PATH
         logger.info(f"Using user-configured WEBHOOK_PATH from settings: {FINAL_WEBHOOK_PATH}")
@@ -143,22 +140,18 @@ def setup_secure_webhook_path() -> None:
         logger.info(f"User-configured WEBHOOK_PATH invalid or not set. Using secure, auto-generated WEBHOOK_PATH: {FINAL_WEBHOOK_PATH}")
 
 # --- Signal Handler ---
-async def graceful_signal_handler_async(sig): # Renamed for clarity, now async
-    logger.info(f"Signal {sig} received by async handler. Initiating graceful shutdown...")
-    if application and hasattr(application, '_is_running') and application._is_running: # PTB v20 internal
-        logger.info("Attempting to stop PTB application...")
-        await application.stop()
-        logger.info("PTB application stop initiated.")
-    elif application and hasattr(application, 'updater') and application.updater and \
-         hasattr(application.updater, 'running') and application.updater.running: # For v13-like structure
-        logger.info("Attempting to stop PTB updater...")
-        application.updater.stop() # This is synchronous in v13
-        logger.info("PTB updater stop initiated.")
-    shutdown_event.set()
+async def graceful_signal_handler_async(sig: signal.Signals):
+    logger.info(f"Signal {sig.name} received by async handler. Initiating graceful shutdown...")
+    # The application stop logic will be called by PTB's internal signal handling
+    # if stop_signals is not None in run_webhook/run_polling.
+    # If stop_signals is None (as in our webhook case), we need to stop it manually.
+    if application and hasattr(application, 'stop') and application._is_running:
+        logger.info("Telling PTB application to stop due to custom signal handler...")
+        await application.stop() # This should be awaited
+        logger.info("PTB application stop initiated by custom handler.")
+    shutdown_event.set() # Set our event to allow run_webhook to exit its wait
 
 # --- Post Initialization Hook ---
-# This hook is part of PTB v20's ApplicationBuilder.
-# If using v13 structure, this logic would be called manually after creating Updater.
 async def post_initialization_hook(app: Application) -> None:
     global FINAL_WEBHOOK_PATH
     webhook_setup_successful = False
@@ -176,12 +169,10 @@ async def post_initialization_hook(app: Application) -> None:
         else:
             full_webhook_url_to_set = f"{WEBHOOK_URL.rstrip('/')}{FINAL_WEBHOOK_PATH}"
             full_webhook_url_display = full_webhook_url_to_set
-
-            logger.info(f"Attempting to set webhook with Telegram: {full_webhook_url_to_set}")
+            logger.info(f"Attempting to set webhook with Telegram (post_init): {full_webhook_url_to_set}")
             max_retries = 3
             for attempt in range(max_retries):
                 try:
-                    # This uses app.bot which is correct for PTB v20 Application object
                     await app.bot.set_webhook(
                         url=full_webhook_url_to_set,
                         allowed_updates=allowed_updates,
@@ -205,13 +196,12 @@ async def post_initialization_hook(app: Application) -> None:
                     logger.info(f"Retrying Telegram webhook setup in {wait_time} seconds...")
                     await asyncio.sleep(wait_time)
             if not webhook_setup_successful:
-                 logger.critical("CRITICAL: Failed to set webhook with Telegram after multiple retries.")
+                 logger.critical("CRITICAL: Failed to set webhook with Telegram after multiple retries (post_init).")
                  full_webhook_url_display = "N/A (Telegram Webhook Setup FAILED!)"
     else:
-        if USE_WEBHOOK: # Only log if in webhook mode but conditions not met
-            logger.info("Skipping Telegram webhook setup (Not in USE_WEBHOOK mode or missing critical configs).")
+        if USE_WEBHOOK:
+            logger.info("Skipping Telegram webhook setup in post_init (Not in USE_WEBHOOK mode or missing critical configs).")
 
-    # JobQueue and Admin notification logic remains the same
     if app.job_queue: logger.info(f"JobQueue initialized. Jobs: {len(app.job_queue.jobs())}")
     else: logger.warning("JobQueue not available.")
 
@@ -233,7 +223,6 @@ async def post_initialization_hook(app: Application) -> None:
             await app.bot.send_message(chat_id=ADMIN_CHAT_ID, text=startup_message, parse_mode=ParseMode.MARKDOWN_V2)
             logger.info(f"Startup notification sent to ADMIN_CHAT_ID: {ADMIN_CHAT_ID}")
         except Exception as e: logger.error(f"Failed to send startup notification: {e}", exc_info=True)
-
 
 # --- Conversation Fallback Handler ---
 async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -258,20 +247,17 @@ async def run_bot():
         logger.critical("FATAL: Invalid or missing BOT_TOKEN configuration.")
         raise RuntimeError("Invalid BOT_TOKEN. Cannot start bot.")
 
-    setup_secure_webhook_path() # Sets FINAL_WEBHOOK_PATH
+    setup_secure_webhook_path()
 
     persistence = None
     # ... persistence setup if needed ...
 
-    # PTB v20 ApplicationBuilder pattern
     application_builder = (
         ApplicationBuilder().token(BOT_TOKEN)
-        .post_init(post_initialization_hook) # post_init IS a v20 feature
-        # .persistence(persistence)
+        .post_init(post_initialization_hook)
     )
-    application = application_builder.build() # This creates the Application object for v20
+    application = application_builder.build()
 
-    # ConversationHandler definition
     z1_gray_conversation_handler = ConversationHandler(
         entry_points=[CommandHandler("start", step_one_entry)],
         states={
@@ -280,7 +266,6 @@ async def run_bot():
                 CallbackQueryHandler(awaiting_step_two_ack_handler, pattern="^review_diagnostics_pressed$"),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unknown_message)
             ],
-            # ... other states
         },
         fallbacks=[
             CommandHandler("cancel", cancel_conversation),
@@ -294,22 +279,45 @@ async def run_bot():
     )
     application.add_handler(z1_gray_conversation_handler)
 
+    # --- Custom Signal Handling Setup (needed for webhook with stop_signals=None) ---
+    # We need to do this *after* application is built and *before* it runs,
+    # so we can get the loop PTB will use.
+    # This is primarily for webhook mode where stop_signals=None.
+    # For polling, PTB's internal stop_signals handling is usually sufficient.
+    # However, adding it here won't harm polling if PTB also handles it.
+
+    loop = asyncio.get_running_loop()
+    for sig_name in (signal.SIGINT, signal.SIGTERM):
+        # Using a wrapper to ensure the async handler is properly scheduled
+        # loop.add_signal_handler takes a synchronous callable.
+        # We create a task for our async handler.
+        def _signal_task_wrapper(s: signal.Signals = sig_name): # Capture signal by default value
+            asyncio.create_task(graceful_signal_handler_async(s))
+        
+        try:
+            loop.add_signal_handler(sig_name, _signal_task_wrapper)
+            logger.info(f"Registered custom signal handler for {sig_name.name}")
+        except (ValueError, RuntimeError) as e: # e.g. "ValueError: signal not supported" on Windows for SIGTERM sometimes
+            logger.warning(f"Could not set custom signal handler for {sig_name.name}: {e}")
+
+
     # --- Start Bot ---
     if USE_WEBHOOK and WEBHOOK_URL and FINAL_WEBHOOK_PATH and BOT_TOKEN and not BOT_TOKEN == "CRITICAL_FAILURE_TOKEN_MISSING":
         if FINAL_WEBHOOK_PATH == "webhook_path_not_set_or_needed":
              logger.critical("CRITICAL: Webhook path not set, cannot start in webhook mode.")
              return
-
-        # --- Start Webhook Server (PTB v20 official method) ---
         try:
             logger.info(f"Starting webhook server, listening at 0.0.0.0:{PORT}, path: {FINAL_WEBHOOK_PATH}")
+            
+            # Initialize and Start are called by run_webhook internally, but calling them
+            # explicitly here ensures post_init hook runs and app is ready.
+            # If run_webhook also calls them, it should be idempotent or handle it.
+            # More typical PTB v20 is to let run_webhook/run_polling handle this.
+            # Let's ensure they are awaited.
+            await application.initialize()
+            await application.start()
 
-            await application.initialize() # Initialize app (will call post_init hook)
-            await application.start()      # Start the application (necessary preparation)
-
-            # Explicitly set/confirm webhook with Telegram.
-            # This ensures the webhook is set before run_webhook, even if post_init had issues or was skipped.
-            # If post_init succeeded, this is redundant but harmless.
+            # Set/confirm webhook with Telegram
             await application.bot.set_webhook(
                 url=f"{WEBHOOK_URL.rstrip('/')}{FINAL_WEBHOOK_PATH}",
                 allowed_updates=[Update.MESSAGE, Update.CALLBACK_QUERY],
@@ -317,79 +325,63 @@ async def run_bot():
             )
             logger.info(f"Telegram webhook set/confirmed to {WEBHOOK_URL.rstrip('/')}{FINAL_WEBHOOK_PATH}")
 
-
             await application.run_webhook(
                 listen="0.0.0.0",
                 port=PORT,
-                url_path=FINAL_WEBHOOK_PATH,  # ✅ CORRECTED: This is the critical fix
-                allowed_updates=[Update.MESSAGE, Update.CALLBACK_QUERY],
-                stop_signals=None  # handled manually by shutdown_event
+                url_path=FINAL_WEBHOOK_PATH,
+                allowed_updates=[Update.MESSAGE, Update.CALLBACK_QUERY], # For PTB internal use
+                stop_signals=None # We handle shutdown via shutdown_event and custom signal handler
             )
-            logger.info(f"Webhook server successfully started, listening at 0.0.0.0:{PORT} on path {FINAL_WEBHOOK_PATH}")
-
-            await shutdown_event.wait() # Wait for graceful shutdown signal
+            logger.info(f"Webhook server successfully started. Waiting for shutdown signal...")
+            await shutdown_event.wait()
+            logger.info("Shutdown event received, run_webhook loop should be ending.")
 
         except Exception as e:
             logger.critical(f"Failed to start webhook server: {e}", exc_info=True)
+            # Ensure application is stopped if it was started and an error occurred
             if application and hasattr(application, '_is_running') and application._is_running:
-                await application.stop() # Ensure application is stopped on failure
-            return
+                logger.info("Stopping application due to error in webhook startup.")
+                await application.stop() # Must be awaited
+            return # Exit run_bot
+        finally:
+            # Ensure application is stopped if it was running and we are exiting webhook mode
+            if application and hasattr(application, '_is_running') and application._is_running:
+                logger.info("Ensuring application is stopped in webhook finally block.")
+                await application.stop() # Must be awaited
 
     else: # Polling mode
         logger.info("Starting bot in POLLING mode...")
-        allowed_updates_polling = [Update.MESSAGE, Update.CALLBACK_QUERY]
+        # For polling, PTB's default stop_signals handling is generally fine.
+        # `application.initialize()` and `application.start()` are called by `run_polling`.
+        # `application.stop()` is also handled internally on signal by `run_polling`.
         await application.run_polling(
-            allowed_updates=allowed_updates_polling,
+            allowed_updates=[Update.MESSAGE, Update.CALLBACK_QUERY],
             drop_pending_updates=True,
-            stop_signals=[signal.SIGINT, signal.SIGTERM] # PTB handles these signals for polling
+            # stop_signals will default to [SIGINT, SIGTERM, SIGABRT]
+            # If we use our custom ones via loop.add_signal_handler, they might both fire.
+            # For polling, it's cleaner to let PTB handle it by not setting stop_signals=None.
         )
-
     logger.info("Bot's main run function has exited.")
 
 
 # --- Script Entry Point ---
 if __name__ == "__main__":
-    # Ensure the loop is available for add_signal_handler
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError: # No running event loop
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-    # Add signal handlers for graceful shutdown
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(graceful_signal_handler_async(s)))
-
     logger.info("Z1-Gray Main Application Bootstrapping Sequence Initiated...")
     try:
-        loop.run_until_complete(run_bot()) # Use existing loop
+        asyncio.run(run_bot()) # ✅ Use asyncio.run()
     except RuntimeError as e:
-        if "Cannot close a running event loop" in str(e) or "Event loop is closed" in str(e):
-            logger.warning(f"Known RuntimeError during shutdown: {e}")
-        elif "Invalid BOT_TOKEN" in str(e): pass # Already logged by run_bot
-        else: logger.critical(f"Runtime Error in main: {e}. Execution halted.", exc_info=True)
-    except NameError as e:
-        logger.critical(f"FATAL NameError in main: {e}. Check imports and definitions.", exc_info=True)
+        # Specific handling for "Invalid BOT_TOKEN" to avoid double logging if already handled in run_bot
+        if "Invalid BOT_TOKEN" in str(e):
+            logger.debug(f"Main caught RuntimeError (likely BOT_TOKEN issue already logged): {e}")
+        elif "Event loop is closed" in str(e) or "Cannot close a running event loop" in str(e):
+            logger.warning(f"Known RuntimeError during shutdown sequence: {e}")
+        else:
+            logger.critical(f"Runtime Error at top level: {e}", exc_info=True)
     except (KeyboardInterrupt, SystemExit):
-        logger.info("Process terminated by KeyboardInterrupt/SystemExit in main.")
-        if not shutdown_event.is_set(): # Ensure shutdown_event is set for webhook mode cleanup
-            logger.info("Setting shutdown_event due to KeyboardInterrupt/SystemExit in main.")
-            shutdown_event.set()
+        # asyncio.run() should handle KeyboardInterrupt gracefully by cancelling the main task.
+        # We log it here for completeness if it propagates.
+        logger.info("Process terminated by KeyboardInterrupt/SystemExit at top level.")
     except Exception as e:
         logger.critical(f"FATAL UNHANDLED EXCEPTION at top level: {e}", exc_info=True)
     finally:
         logger.info("Z1-Gray Main Application execution cycle concluded.")
-        # Optional: Advanced loop cleanup, though often process exit is sufficient
-        # try:
-        #     if hasattr(loop, 'is_running') and loop.is_running():
-        #         pending = asyncio.all_tasks(loop=loop)
-        #         if pending:
-        #             logger.info(f"Cancelling {len(pending)} outstanding tasks before closing loop...")
-        #             for task in pending:
-        #                 task.cancel()
-        #             loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
-        # finally:
-        #     if hasattr(loop, 'is_closed') and not loop.is_closed():
-        #         loop.close()
-        #         logger.info("Asyncio event loop explicitly closed.")
-        pass
