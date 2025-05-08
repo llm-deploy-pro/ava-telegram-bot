@@ -13,48 +13,25 @@ Custom states start from 0.
 """
 
 # --- Step ①: SYSTEM INIT ---
-# After the initial automated messages of Step ① are sent by `step_one_entry`,
-# the bot transitions. If Step ②'s scan messages are also fully automated up to
-# the point of user acknowledgement, the actual "waiting" state will be
-# STEP_2_AWAITING_REVIEW_CHOICE_STATE.
-# No specific "waiting" state is defined for *during* Step ①'s automated message delivery.
-# `step_one_entry` in `handlers/step_1.py` will manage its internal flow and then
-# return the next appropriate state (likely STEP_2_AWAITING_REVIEW_CHOICE_STATE
-# after scheduling or sending Step 2's initial messages up to the prompt).
+# (Comments as before)
 
 # --- Step ②: USER TRACE SCAN ---
-# After Step ②'s automated scan messages are sent, the bot prompts the user
-# to confirm if they wish to proceed with reviewing the detailed diagnostic report.
 STEP_2_AWAITING_REVIEW_CHOICE_STATE = 0  # Awaiting user's "OK" or [REVIEW DIAGNOSTICS] button click.
 
 # --- Step ③: DIAGNOSIS RESULT ---
-# After the user confirms in Step ②, Step ③'s automated diagnostic messages are sent.
-# If Step ④ (Access Lock) follows automatically after Step ③'s messages,
-# then `handle_step_3_diagnosis` (or similar in `handlers/step_3.py`) would
-# manage Step ③'s messages and then schedule Step ④, returning the next
-# "waiting" state, which would be STEP_4_AWAITING_USER_DECISION_STATE.
-# No specific "waiting" state is defined for *during* Step ③'s automated message delivery.
+# (Comments as before)
+# Note: No specific state defined for Step 3 in your current active states.
+# If AWAITING_STEP_THREE_ACK was meant for something else, adjust accordingly.
 
 # --- Step ④: ACCESS LOCK ---
-# After Step ④'s automated "Access Lock" messages (slots, countdown, risk) are sent,
-# the bot presents two buttons: [OPTIMIZE & SECURE MY NODE] and [Query Protocol Necessity].
 STEP_4_AWAITING_USER_DECISION_STATE = 1  # Awaiting user's click on one of the two action buttons.
 
 # --- Step ⑤: SYNC CTA ---
-# This state is entered if the user, after being presented with the buttons in Step ④,
-# types text instead of clicking, or after specific button paths that lead to text input handling.
-# It manages various user responses (positive, hesitant, negative) before the final CTA.
 STEP_5_CTA_TEXT_INPUT_STATE = 2          # Handling varied text inputs before final sync confirmation.
-
-# If the user explicitly rejects the offer during STEP_5_CTA_TEXT_INPUT_STATE,
-# the bot offers a final, time-limited chance to proceed.
 STEP_5_FINAL_CHANCE_STATE = 3            # Awaiting click on the "final chance" button or timeout.
 
 
 # --- Optional: A list of all primary user-waiting states for potential programmatic use ---
-# This can be useful for debugging, logging, or certain ConversationHandler configurations,
-# though ConversationHandler's `states` dictionary is the primary definition source.
-# Excludes states that are purely transitional or managed internally by automated sequences.
 DEFINED_USER_INTERACTION_STATES = [
     STEP_2_AWAITING_REVIEW_CHOICE_STATE,
     STEP_4_AWAITING_USER_DECISION_STATE,
@@ -63,28 +40,42 @@ DEFINED_USER_INTERACTION_STATES = [
 ]
 
 # --- State Name Map ---
-# A mapping from state integer values to their string names.
-# This is crucial for logging in main.py and for general debugging.
-# The keys are the state constants, and values are their string representations.
 STATE_NAME_MAP = {
     STEP_2_AWAITING_REVIEW_CHOICE_STATE: "STEP_2_AWAITING_REVIEW_CHOICE_STATE",
     STEP_4_AWAITING_USER_DECISION_STATE: "STEP_4_AWAITING_USER_DECISION_STATE",
     STEP_5_CTA_TEXT_INPUT_STATE: "STEP_5_CTA_TEXT_INPUT_STATE",
     STEP_5_FINAL_CHANCE_STATE: "STEP_5_FINAL_CHANCE_STATE",
-    # If you add more states above, remember to add them here as well.
-    # Example for a hypothetical new state:
-    # NEW_EXAMPLE_STATE : "NEW_EXAMPLE_STATE",
 }
 
+# --- Optional Aliases for Backward Compatibility or common references in main.py fallbacks ---
+# This helps if main.py accidentally uses old fallback names after a failed import,
+# or if parts of main.py were not fully updated to new state names.
+AWAITING_STEP_TWO_ACK = STEP_2_AWAITING_REVIEW_CHOICE_STATE
+
+# Regarding AWAITING_STEP_THREE_ACK:
+# Your original fallback in main.py mapped it to 1, which is STEP_4_AWAITING_USER_DECISION_STATE.
+# If there's no distinct "Step 3 waiting state", this alias might be confusing.
+# Let's assume for now it was intended to map to a state that's effectively Step 4's waiting point.
+# Or, if you have a conceptual Step 3 waiting point that maps to STEP_4_AWAITING_USER_DECISION_STATE,
+# this alias could reflect that.
+# If AWAITING_STEP_THREE_ACK is truly unused or its mapping is unclear, you can omit this alias.
+# For completeness based on the prompt's suggestion:
+# AWAITING_STEP_THREE_ACK = STEP_4_AWAITING_USER_DECISION_STATE # Or map to a different state if Step 3 has its own constant
+# ^^^ 注意：这一行目前是注释掉的，因为 STEP_4_AWAITING_USER_DECISION_STATE 已经是 1，
+# 如果你需要一个独立的 AWAITING_STEP_THREE_ACK 并且它也等于 1，那没问题。
+# 但如果它有其他含义，或者你没有实际的“等待步骤三确认”的状态，最好明确。
+# 如果只是为了让 main.py 的 fallback 不报错，可以暂时这样。
+
+# Your original main.py fallback also had:
+# AWAITING_STEP_FIVE_CHOICE (mapped to 2, which is STEP_5_CTA_TEXT_INPUT_STATE)
+# STEP_5_AWAITING_FINAL_ACTION (mapped to 3, which is STEP_5_FINAL_CHANCE_STATE)
+# If these old names might still be referenced, add aliases:
+AWAITING_STEP_FIVE_CHOICE = STEP_5_CTA_TEXT_INPUT_STATE
+STEP_5_AWAITING_FINAL_ACTION = STEP_5_FINAL_CHANCE_STATE
+
+
 # Note on "Forbidden Input Stage" or "Allow Input Stage":
-# These concepts are implemented by *how* handlers are defined for each
-# specific state in `main.py`'s `ConversationHandler`.
-# - If a state has no `MessageHandler(filters.TEXT, ...)` or only a very generic
-#   "system busy" one, it effectively forbids meaningful text input.
-# - If a state has specific `MessageHandler` or `CallbackQueryHandler` entries,
-#   it explicitly allows and defines how to handle those inputs.
-# Therefore, separate state constants for "FORBIDDEN_INPUT" are not strictly necessary
-# at this definition level.
+# (Comments as before)
 
 # Reminder: Do not include logging or other runtime logic in this definitions file.
 # Its sole purpose is to provide a centralized, consistent set of state constants
