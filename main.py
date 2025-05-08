@@ -208,7 +208,8 @@ async def post_initialization_hook(app: Application) -> None:
                  logger.critical("CRITICAL: Failed to set webhook with Telegram after multiple retries.")
                  full_webhook_url_display = "N/A (Telegram Webhook Setup FAILED!)"
     else:
-        logger.info("Skipping Telegram webhook setup (Not in USE_WEBHOOK mode or missing critical configs).")
+        if USE_WEBHOOK: # Only log if in webhook mode but conditions not met
+            logger.info("Skipping Telegram webhook setup (Not in USE_WEBHOOK mode or missing critical configs).")
 
     # JobQueue and Admin notification logic remains the same
     if app.job_queue: logger.info(f"JobQueue initialized. Jobs: {len(app.job_queue.jobs())}")
@@ -227,7 +228,7 @@ async def post_initialization_hook(app: Application) -> None:
                                f"*Node:* `@{safe_bot_username}`\n"
                                f"*TS:* `{time.strftime('%Y-%m-%d %H:%M:%S %Z')}`")
             if USE_WEBHOOK:
-                startup_message += f"\n*App Listening Path:* `{escape_markdown(FINAL_WEBHOOK_PATH, version=2)}`"
+                startup_message += f"\n*App Listening Path:* `{escape_markdown(FINAL_WEBHOOK_PATH if FINAL_WEBHOOK_PATH != 'webhook_path_not_set_or_needed' else 'N/A', version=2)}`"
                 startup_message += f"\n*Telegram Endpoint:* `{safe_webhook_url_display}`"
             await app.bot.send_message(chat_id=ADMIN_CHAT_ID, text=startup_message, parse_mode=ParseMode.MARKDOWN_V2)
             logger.info(f"Startup notification sent to ADMIN_CHAT_ID: {ADMIN_CHAT_ID}")
@@ -303,38 +304,42 @@ async def run_bot():
         try:
             logger.info(f"Starting webhook server, listening at 0.0.0.0:{PORT}, path: {FINAL_WEBHOOK_PATH}")
 
-            await application.initialize() # Initialize app (will call post_init hook, which also sets webhook)
+            await application.initialize() # Initialize app (will call post_init hook)
             await application.start()      # Start the application (necessary preparation)
 
-            # Set webhook with Telegram (this might be redundant if post_init succeeded, but ensures it's set before run_webhook)
-            # This matches the structure you provided for the replacement.
+            # Explicitly set/confirm webhook with Telegram.
+            # This ensures the webhook is set before run_webhook, even if post_init had issues or was skipped.
+            # If post_init succeeded, this is redundant but harmless.
             await application.bot.set_webhook(
                 url=f"{WEBHOOK_URL.rstrip('/')}{FINAL_WEBHOOK_PATH}",
                 allowed_updates=[Update.MESSAGE, Update.CALLBACK_QUERY],
                 drop_pending_updates=True
             )
+            logger.info(f"Telegram webhook set/confirmed to {WEBHOOK_URL.rstrip('/')}{FINAL_WEBHOOK_PATH}")
+
 
             await application.run_webhook(
                 listen="0.0.0.0",
                 port=PORT,
-                webhook_path=FINAL_WEBHOOK_PATH, # Note: PTB uses webhook_path, not url_path for application.run_webhook
+                url_path=FINAL_WEBHOOK_PATH,  # ✅ CORRECTED: This is the critical fix
                 allowed_updates=[Update.MESSAGE, Update.CALLBACK_QUERY],
                 stop_signals=None  # handled manually by shutdown_event
             )
+            logger.info(f"Webhook server successfully started, listening at 0.0.0.0:{PORT} on path {FINAL_WEBHOOK_PATH}")
 
             await shutdown_event.wait() # Wait for graceful shutdown signal
 
         except Exception as e:
             logger.critical(f"Failed to start webhook server: {e}", exc_info=True)
-            return         # main.py
+            if application and hasattr(application, '_is_running') and application._is_running:
+                await application.stop() # Ensure application is stopped on failure
+            return
 
     else: # Polling mode
         logger.info("Starting bot in POLLING mode...")
-        allowed_updates = [Update.MESSAGE, Update.CALLBACK_QUERY]
-        # For polling, application.initialize() and application.start() are called internally by run_polling.
-        # The post_init hook will still be called.
+        allowed_updates_polling = [Update.MESSAGE, Update.CALLBACK_QUERY]
         await application.run_polling(
-            allowed_updates=allowed_updates,
+            allowed_updates=allowed_updates_polling,
             drop_pending_updates=True,
             stop_signals=[signal.SIGINT, signal.SIGTERM] # PTB handles these signals for polling
         )
@@ -344,23 +349,47 @@ async def run_bot():
 
 # --- Script Entry Point ---
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
+    # Ensure the loop is available for add_signal_handler
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError: # No running event loop
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    # Add signal handlers for graceful shutdown
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(graceful_signal_handler_async(s)))
 
     logger.info("Z1-Gray Main Application Bootstrapping Sequence Initiated...")
     try:
-        asyncio.run(run_bot())
+        loop.run_until_complete(run_bot()) # Use existing loop
     except RuntimeError as e:
         if "Cannot close a running event loop" in str(e) or "Event loop is closed" in str(e):
             logger.warning(f"Known RuntimeError during shutdown: {e}")
-        elif "Invalid BOT_TOKEN" in str(e): pass
-        else: logger.critical(f"Runtime Error: {e}. Execution halted.", exc_info=True)
+        elif "Invalid BOT_TOKEN" in str(e): pass # Already logged by run_bot
+        else: logger.critical(f"Runtime Error in main: {e}. Execution halted.", exc_info=True)
     except NameError as e:
-        logger.critical(f"FATAL NameError: {e}. Check imports and definitions.", exc_info=True)
+        logger.critical(f"FATAL NameError in main: {e}. Check imports and definitions.", exc_info=True)
     except (KeyboardInterrupt, SystemExit):
-        logger.info("Process terminated by KeyboardInterrupt/SystemExit.")
+        logger.info("Process terminated by KeyboardInterrupt/SystemExit in main.")
+        if not shutdown_event.is_set(): # Ensure shutdown_event is set for webhook mode cleanup
+            logger.info("Setting shutdown_event due to KeyboardInterrupt/SystemExit in main.")
+            shutdown_event.set()
     except Exception as e:
         logger.critical(f"FATAL UNHANDLED EXCEPTION at top level: {e}", exc_info=True)
     finally:
         logger.info("Z1-Gray Main Application execution cycle concluded.")
+        # Optional: Advanced loop cleanup, though often process exit is sufficient
+        # try:
+        #     if hasattr(loop, 'is_running') and loop.is_running():
+        #         pending = asyncio.all_tasks(loop=loop)
+        #         if pending:
+        #             logger.info(f"Cancelling {len(pending)} outstanding tasks before closing loop...")
+        #             for task in pending:
+        #                 task.cancel()
+        #             loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+        # finally:
+        #     if hasattr(loop, 'is_closed') and not loop.is_closed():
+        #         loop.close()
+        #         logger.info("Asyncio event loop explicitly closed.")
+        pass
