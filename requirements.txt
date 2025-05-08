@@ -1,0 +1,45 @@
+﻿# --- Telegram Bot Framework ---
+python-telegram-bot[ext]==20.8   # 官方推荐写法，includes aiohttp, APScheduler, etc.
+
+# --- Environment Variable Handling ---
+python-dotenv>=1.0.0             # 加载 .env 文件，支持本地和云端部署
+
+# --- Webhook 服务支持 ---
+aiohttp>=3.8.1                   # PTB webhook 模式所需底层框架
+
+# --- Time / Date Formatting ---
+pytz>=2023.3                     # 时区处理（备用）
+python-dateutil>=2.8.2          # 人类友好的时间解析（如 countdown 格式等）
+
+# --- Optional Enhancements (Recommended for commercial use) ---
+
+# Logging Enhancements
+loguru>=0.7.2                    # 比 logging 更强大的日志系统（可选，项目中已有结构化日志）
+
+# JSON / YAML / Config parsing
+pyyaml>=6.0                      # 结构化配置支持（如后续引入 YAML 配置）
+
+# Security / Token / Secrets
+cryptography>=41.0.3            # 加密相关操作（如 token 签名 / future payment 处理）
+secrets; python_version>="3.6"  # 内置，无需额外安装，保留注释以防手动误删
+
+# Type Checking / Formatting (Dev Only)
+mypy>=1.8.0                      # 类型检查（开发阶段）
+black>=24.3.0                    # 自动代码格式化（开发阶段）
+isort>=5.12.0                    # 自动 import 排序
+
+# Testing / Debugging (Optional, remove if not writing tests)
+pytest>=7.4.0
+pytest-asyncio>=0.21.1
+
+# --- Deployment Notes ---
+# If you're using Render / Railway or any cloud:
+# they often inject PORT, don't hardcode it in code.
+
+# For Render: add 'gunicorn' only if you build a separate aiohttp app layer (not needed for PTB directly)
+# gunicorn>=20.1.0
+
+# Optional: SQL ORM if using PostgreSQL
+# sqlalchemy>=2.0.0
+# psycopg2-binary>=2.9.6
+
