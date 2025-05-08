@@ -247,10 +247,10 @@ async def run_bot():
     # except Exception as e:
     #     logger.error(f"Failed to initialize PicklePersistence: {e}. Persistence disabled.")
 
+    # FIXED: Removed drop_pending_updates from ApplicationBuilder
     application_builder = (
         ApplicationBuilder().token(BOT_TOKEN)
         .post_init(post_initialization_hook)
-        .drop_pending_updates(True) # Good for production to avoid processing old updates on restart
         # .persistence(persistence) # Enable if configured
         # .concurrent_updates(True) # Optional performance tuning
     )
@@ -299,13 +299,15 @@ async def run_bot():
     # --- Start Bot ---
     if USE_WEBHOOK and WEBHOOK_URL and FINAL_WEBHOOK_PATH and BOT_TOKEN and not BOT_TOKEN == "CRITICAL_FAILURE_TOKEN_MISSING":
         await application.initialize()
+        # FIXED: Handle drop_pending_updates in start_webhook
         await application.start()
         logger.info(f"PTB core started for WEBHOOK. Ensure external server handles {FINAL_WEBHOOK_PATH} on port {PORT}.")
         await shutdown_event.wait()
     else:
         logger.info("Starting bot in POLLING mode...")
         allowed_updates = [Update.MESSAGE, Update.CALLBACK_QUERY] # Example: be specific
-        await application.run_polling(allowed_updates=allowed_updates, stop_signals=[]) # Pass empty list to handle signals manually
+        # FIXED: Move drop_pending_updates to run_polling as parameter
+        await application.run_polling(allowed_updates=allowed_updates, drop_pending_updates=True, stop_signals=[]) # Pass empty list to handle signals manually
 
     # --- Graceful Shutdown ---
     logger.info("Initiating final application shutdown...")
