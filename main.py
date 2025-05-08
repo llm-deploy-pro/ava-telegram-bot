@@ -6,38 +6,37 @@ import signal
 import os
 import secrets # For secure webhook path
 from urllib.parse import urlparse
-from datetime import timedelta
-import logging.handlers # ✅ Item 5 (from review): For RotatingFileHandler
-import time # Added for startup message timestamp
+# from datetime import timedelta # Not used
+import logging.handlers
+import time
 
 from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import (
     ApplicationBuilder,
-    Application,  # ✅ ADDED THIS IMPORT
+    Application, # Keep this for type hinting if using v20 structure elsewhere
     CommandHandler,
     ConversationHandler,
     MessageHandler,
     CallbackQueryHandler,
     filters,
     ContextTypes,
-    PicklePersistence # ✅ Item 4 (from review): Enable persistence
+    PicklePersistence,
+    # If using updater explicitly, Updater might be needed from here for older versions
+    # For v20, Application is the main object.
 )
 
 # --- Attempt to import configurations and handlers ---
-# Assume settings.py loads BOT_TOKEN, WEBHOOK_URL, PORT, CFG_WEBHOOK_PATH, ADMIN_CHAT_ID, DEVELOPMENT_MODE, USE_WEBHOOK
 try:
     from config.settings import (
-        BOT_TOKEN, WEBHOOK_URL, PORT,
-        WEBHOOK_PATH as CFG_WEBHOOK_PATH, # User configured path (might be ignored if not secure)
+        BOT_TOKEN, WEBHOOK_URL, PORT, # PORT is used directly in the new webhook logic
+        WEBHOOK_PATH as CFG_WEBHOOK_PATH,
         ADMIN_CHAT_ID, DEVELOPMENT_MODE, USE_WEBHOOK,
-        LOG_FILE_PATH # ✅ Item 5: Expect log file path from settings
+        LOG_FILE_PATH
     )
 except ImportError:
-    # Critical fallback logging setup
     logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.CRITICAL)
     logging.critical("CRITICAL: Failed to import required variables from config.settings.py.")
-    # Set minimal defaults to allow basic error checks
     BOT_TOKEN = os.getenv("BOT_TOKEN", "CRITICAL_FAILURE_TOKEN_MISSING")
     WEBHOOK_URL = None; PORT = 8080; CFG_WEBHOOK_PATH = None; ADMIN_CHAT_ID = None; LOG_FILE_PATH = None
     DEVELOPMENT_MODE = os.getenv("DEVELOPMENT_MODE", "False").lower() in ("true", "1", "yes")
@@ -48,28 +47,23 @@ except ImportError:
 log_level = logging.DEBUG if DEVELOPMENT_MODE else logging.INFO
 log_format = "%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s"
 
-# Setup basic console logging first
 logging.basicConfig(
     format=log_format,
     level=log_level,
-    handlers=[logging.StreamHandler()] # Console output
+    handlers=[logging.StreamHandler()]
 )
 
-# Silence overly verbose libraries
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("telegram.ext").setLevel(logging.INFO if not DEVELOPMENT_MODE else logging.DEBUG)
-logger = logging.getLogger(__name__) # Logger for this main module
+logger = logging.getLogger(__name__)
 
-# ✅ Item 5 (from review): Setup File Logging if path is configured
 if LOG_FILE_PATH:
     try:
-        # Use RotatingFileHandler for log rotation (10MB per file, keep 5 backups)
         file_formatter = logging.Formatter(log_format)
         file_handler = logging.handlers.RotatingFileHandler(
             LOG_FILE_PATH, maxBytes=10*1024*1024, backupCount=5, encoding='utf-8'
         )
         file_handler.setFormatter(file_formatter)
-        # Add the handler to the root logger to capture logs from all modules
         logging.getLogger().addHandler(file_handler)
         logger.info(f"File logging enabled. Outputting to: {LOG_FILE_PATH}")
     except Exception as e:
@@ -77,150 +71,179 @@ if LOG_FILE_PATH:
 else:
     logger.info("File logging disabled (LOG_FILE_PATH not set in config/settings.py).")
 
+# --- Import State Definitions ---
+try:
+    from utils.state_definitions import *
+    if 'STATE_NAME_MAP' not in globals() or not isinstance(STATE_NAME_MAP, dict) or \
+       'STEP_2_AWAITING_REVIEW_CHOICE_STATE' not in globals():
+        raise ImportError("Essential state definitions missing after import from utils.state_definitions.")
+    logger.info("Successfully imported state definitions from utils.state_definitions.")
+except ImportError as e:
+    logger.critical(f"CRITICAL: Failed to import or validate state definitions from utils.state_definitions.py: {e}. THIS IS FATAL.")
+    STEP_2_AWAITING_REVIEW_CHOICE_STATE, STEP_4_AWAITING_USER_DECISION_STATE = 0, 1
+    STEP_5_CTA_TEXT_INPUT_STATE, STEP_5_FINAL_CHANCE_STATE = 2, 3
+    AWAITING_STEP_TWO_ACK = STEP_2_AWAITING_REVIEW_CHOICE_STATE # Alias from your state_definitions
+    AWAITING_STEP_FIVE_CHOICE = STEP_5_CTA_TEXT_INPUT_STATE     # Alias
+    STEP_5_AWAITING_FINAL_ACTION = STEP_5_FINAL_CHANCE_STATE  # Alias
+    STATE_NAME_MAP = {
+        STEP_2_AWAITING_REVIEW_CHOICE_STATE: "FALLBACK_S2_REVIEW_CHOICE",
+        STEP_4_AWAITING_USER_DECISION_STATE: "FALLBACK_S4_USER_DECISION",
+        STEP_5_CTA_TEXT_INPUT_STATE: "FALLBACK_S5_CTA_INPUT",
+        STEP_5_FINAL_CHANCE_STATE: "FALLBACK_S5_FINAL_CHANCE",
+    }
+    logger.warning("Fallback state definitions are active. ConversationHandler may be broken.")
 
 # --- Import Handlers (Robust Placeholders) ---
-# These imports MUST be replaced with actual handler functions as they are developed.
 try:
     from handlers.step_1 import step_one_entry
 except ImportError:
     logger.warning("Using placeholder for step_1_entry.")
-    async def step_one_entry(u: Update, c: ContextTypes.DEFAULT_TYPE): # Added type hints for clarity
+    async def step_one_entry(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await u.message.reply_text("[SYS_ERR] H1 Missing.")
-        return ConversationHandler.END # type: ignore
+        return ConversationHandler.END
 
-# Import placeholders for handlers that specific CH states will point to
-async def awaiting_step_two_ack_handler(u: Update,c: ContextTypes.DEFAULT_TYPE): logger.info("Placeholder: Awaiting Step 2 Ack handler"); return # type: ignore
-async def awaiting_step_three_ack_handler(u: Update,c: ContextTypes.DEFAULT_TYPE): logger.info("Placeholder: Awaiting Step 3 Ack handler"); return # type: ignore
-async def awaiting_step_five_choice_callback_handler(u: Update,c: ContextTypes.DEFAULT_TYPE): logger.info("Placeholder: Awaiting Step 5 Choice CB handler"); await u.callback_query.answer(); return # type: ignore
-async def awaiting_step_five_choice_text_handler(u: Update,c: ContextTypes.DEFAULT_TYPE): logger.info("Placeholder: Awaiting Step 5 Choice text handler"); return # type: ignore
-async def step_five_cta_text_handler(u: Update,c: ContextTypes.DEFAULT_TYPE): logger.info("Placeholder: Step 5 CTA text handler"); return # type: ignore
-async def step_five_final_chance_handler(u: Update,c: ContextTypes.DEFAULT_TYPE): logger.info("Placeholder: Step 5 Final Chance handler"); return # type: ignore
+async def awaiting_step_two_ack_handler(u: Update,c: ContextTypes.DEFAULT_TYPE): logger.info("Placeholder: Awaiting Step 2 Ack handler"); return
+async def awaiting_step_three_ack_handler(u: Update,c: ContextTypes.DEFAULT_TYPE): logger.info("Placeholder: Awaiting Step 3 Ack handler"); return
+async def awaiting_step_five_choice_callback_handler(u: Update,c: ContextTypes.DEFAULT_TYPE): logger.info("Placeholder: Awaiting Step 5 Choice CB handler"); await u.callback_query.answer(); return
+async def awaiting_step_five_choice_text_handler(u: Update,c: ContextTypes.DEFAULT_TYPE): logger.info("Placeholder: Awaiting Step 5 Choice text handler"); return
+async def step_five_cta_text_handler(u: Update,c: ContextTypes.DEFAULT_TYPE): logger.info("Placeholder: Step 5 CTA text handler"); return
+async def step_five_final_chance_handler(u: Update,c: ContextTypes.DEFAULT_TYPE): logger.info("Placeholder: Step 5 Final Chance handler"); return
 
 try:
     from handlers.unknown import handle_unknown_message, handle_unknown_command, handle_unknown_callback
 except ImportError:
     logger.warning("Using placeholders for unknown handlers.")
-    async def handle_unknown_message(u: Update, c: ContextTypes.DEFAULT_TYPE): # Added type hints
-        await u.message.reply_text("[SYS] Unknown input (text).") # type: ignore
+    async def handle_unknown_message(u: Update, c: ContextTypes.DEFAULT_TYPE): await u.message.reply_text("[SYS] Unknown input (text)."); return
+    async def handle_unknown_command(u: Update, c: ContextTypes.DEFAULT_TYPE): await u.message.reply_text("[SYS] Unknown input (command)."); return
+    async def handle_unknown_callback(u: Update, c: ContextTypes.DEFAULT_TYPE):
+        if u.callback_query: await u.callback_query.answer("Unknown callback action.", show_alert=False)
+        if u.effective_message: await u.effective_message.reply_text("[SYS] Unknown input (callback).")
         return
-
-    async def handle_unknown_command(u: Update, c: ContextTypes.DEFAULT_TYPE): # Added type hints
-        await u.message.reply_text("[SYS] Unknown input (command).") # type: ignore
-        return
-
-    async def handle_unknown_callback(u: Update, c: ContextTypes.DEFAULT_TYPE): # Added type hints
-        if u.callback_query:
-            await u.callback_query.answer("Unknown callback action.", show_alert=False)
-        # It's good practice to reply to the message that triggered the callback if possible
-        if u.effective_message:
-            await u.effective_message.reply_text("[SYS] Unknown input (callback).") # type: ignore
-        return
-
-try:
-    from utils.state_definitions import * # Import all states
-    if 'STATE_NAME_MAP' not in globals() or not isinstance(STATE_NAME_MAP, dict): raise ImportError("STATE_NAME_MAP missing")
-except ImportError:
-    logger.critical("CRITICAL: utils/state_definitions.py / STATE_NAME_MAP missing. Using fallbacks.")
-    AWAITING_STEP_TWO_ACK, AWAITING_STEP_THREE_ACK, AWAITING_STEP_FIVE_CHOICE = 0,1,2 # type: ignore
-    STEP_5_AWAITING_FINAL_ACTION, STEP_5_FINAL_CHANCE_STATE = 3, 4 # type: ignore
-    STATE_NAME_MAP = {0:"S2_ACK_FB", 1:"S3_ACK_FB", 2:"S5_CHOICE_FB", 3:"S5_ACTION_FB", 4:"S5_FINAL_FB"} # type: ignore
-
 
 # --- Global Variables ---
 shutdown_event = asyncio.Event()
-application: Application | None = None # ✅ MODIFIED THIS LINE
+application: Application | None = None # For PTB v20, this is correct. For v13, you'd use Updater.
 FINAL_WEBHOOK_PATH = None
 
 # --- Secure Webhook Path Generation ---
-# ✅ Item 3 (from review): Enhanced security for Webhook Path
 def setup_secure_webhook_path() -> None:
-    """Determines the final, secure webhook path."""
     global FINAL_WEBHOOK_PATH
-    if not WEBHOOK_URL: return # Not needed for polling
+    if not USE_WEBHOOK or not WEBHOOK_URL:
+        FINAL_WEBHOOK_PATH = "webhook_path_not_set_or_needed" # Default placeholder
+        logger.info("Webhook path generation skipped (not in webhook mode or WEBHOOK_URL not set).")
+        return
 
-    # Use a highly unpredictable, URL-safe random string as the path base
-    # Prepending with a short, non-obvious prefix is optional but can help routing/identification
-    secure_suffix = secrets.token_urlsafe(16) # Generate 16 URL-safe random bytes
-    FINAL_WEBHOOK_PATH = f"/tgwh_{secure_suffix}" # Example prefix + random string
-    logger.info(f"Using secure, auto-generated WEBHOOK_PATH: {FINAL_WEBHOOK_PATH}")
-    # Disregard CFG_WEBHOOK_PATH from settings unless a specific need arises to override this secure generation
+    # Use user-configured path if valid, otherwise generate one
+    if CFG_WEBHOOK_PATH and CFG_WEBHOOK_PATH.startswith("/") and len(CFG_WEBHOOK_PATH) > 1:
+        FINAL_WEBHOOK_PATH = CFG_WEBHOOK_PATH
+        logger.info(f"Using user-configured WEBHOOK_PATH from settings: {FINAL_WEBHOOK_PATH}")
+    else:
+        secure_suffix = secrets.token_urlsafe(16)
+        FINAL_WEBHOOK_PATH = f"/tgwh_{secure_suffix}"
+        logger.info(f"User-configured WEBHOOK_PATH invalid or not set. Using secure, auto-generated WEBHOOK_PATH: {FINAL_WEBHOOK_PATH}")
 
 # --- Signal Handler ---
-def graceful_signal_handler(sig, frame):
-    logger.info(f"Signal {sig} received. Initiating graceful shutdown...")
-    if loop := asyncio.get_running_loop(): loop.call_soon_threadsafe(shutdown_event.set)
-    else: shutdown_event.set()
+async def graceful_signal_handler_async(sig): # Renamed for clarity, now async
+    logger.info(f"Signal {sig} received by async handler. Initiating graceful shutdown...")
+    if application and hasattr(application, '_is_running') and application._is_running: # PTB v20 internal
+        logger.info("Attempting to stop PTB application...")
+        await application.stop()
+        logger.info("PTB application stop initiated.")
+    elif application and hasattr(application, 'updater') and application.updater and \
+         hasattr(application.updater, 'running') and application.updater.running: # For v13-like structure
+        logger.info("Attempting to stop PTB updater...")
+        application.updater.stop() # This is synchronous in v13
+        logger.info("PTB updater stop initiated.")
+    shutdown_event.set()
 
 # --- Post Initialization Hook ---
-async def post_initialization_hook(app: Application) -> None: # ✅ MODIFIED THIS LINE
+# This hook is part of PTB v20's ApplicationBuilder.
+# If using v13 structure, this logic would be called manually after creating Updater.
+async def post_initialization_hook(app: Application) -> None:
     global FINAL_WEBHOOK_PATH
     webhook_setup_successful = False
-    allowed_updates = [Update.MESSAGE, Update.CALLBACK_QUERY] # Be specific
-    full_webhook_url = "N/A (Polling or Setup Failed)" # Initialize for startup message
+    allowed_updates = [Update.MESSAGE, Update.CALLBACK_QUERY]
+    full_webhook_url_display = "N/A (Polling or Setup Failed)"
 
-    if USE_WEBHOOK and WEBHOOK_URL and FINAL_WEBHOOK_PATH and BOT_TOKEN and not BOT_TOKEN.startswith("CRITICAL_FAILURE_TOKEN_MISSING"): # Check against fallback token
+    if USE_WEBHOOK and WEBHOOK_URL and FINAL_WEBHOOK_PATH and BOT_TOKEN and not BOT_TOKEN.startswith("CRITICAL_FAILURE_TOKEN_MISSING"):
+        if FINAL_WEBHOOK_PATH == "webhook_path_not_set_or_needed":
+            logger.critical("CRITICAL: FINAL_WEBHOOK_PATH was not properly set. Webhook setup cannot proceed with Telegram.")
+            return
+
         parsed_url = urlparse(WEBHOOK_URL)
         if not parsed_url.scheme == "https" or not parsed_url.netloc:
-            logger.critical(f"Webhook URL '{WEBHOOK_URL}' invalid. Webhook NOT set.")
+            logger.critical(f"Webhook URL '{WEBHOOK_URL}' invalid. Webhook NOT set with Telegram.")
         else:
-            full_webhook_url = f"{WEBHOOK_URL.rstrip('/')}{FINAL_WEBHOOK_PATH}"
-            logger.info(f"Attempting to set webhook: {full_webhook_url}")
-            # ✅ Item 4 (from review): Webhook Setup Retry Logic
+            full_webhook_url_to_set = f"{WEBHOOK_URL.rstrip('/')}{FINAL_WEBHOOK_PATH}"
+            full_webhook_url_display = full_webhook_url_to_set
+
+            logger.info(f"Attempting to set webhook with Telegram: {full_webhook_url_to_set}")
             max_retries = 3
             for attempt in range(max_retries):
                 try:
-                    await app.bot.set_webhook(url=full_webhook_url, allowed_updates=allowed_updates, drop_pending_updates=True)
+                    # This uses app.bot which is correct for PTB v20 Application object
+                    await app.bot.set_webhook(
+                        url=full_webhook_url_to_set,
+                        allowed_updates=allowed_updates,
+                        drop_pending_updates=True
+                    )
                     webhook_info = await app.bot.get_webhook_info()
-                    if webhook_info.url == full_webhook_url:
-                        logger.info(f"Webhook set successfully on attempt {attempt + 1}: {webhook_info.url}")
+                    if webhook_info.url == full_webhook_url_to_set:
+                        logger.info(f"Webhook set successfully with Telegram on attempt {attempt + 1}: {webhook_info.url}")
                         webhook_setup_successful = True
-                        break # Exit retry loop on success
+                        break
                     else:
-                        logger.warning(f"Webhook set attempt {attempt + 1} failed. API returned different URL. Got: {webhook_info.url}")
+                        logger.warning(f"Telegram's reported Webhook URL differs. Expected: {full_webhook_url_to_set}, Got: {webhook_info.url}")
+                        if urlparse(webhook_info.url).path == FINAL_WEBHOOK_PATH:
+                             logger.info(f"Webhook path {FINAL_WEBHOOK_PATH} matches Telegram's reported URL. Considering successful.")
+                             webhook_setup_successful = True
+                             break
                 except Exception as e:
-                    logger.error(f"Error setting webhook on attempt {attempt + 1}: {e}", exc_info=(attempt == max_retries - 1)) # Log full traceback on last attempt
+                    logger.error(f"Error setting webhook with Telegram on attempt {attempt + 1}: {e}", exc_info=(attempt == max_retries - 1))
                 if attempt < max_retries - 1:
-                    wait_time = 2 ** attempt # Exponential backoff (1, 2, 4 seconds)
-                    logger.info(f"Retrying webhook setup in {wait_time} seconds...")
+                    wait_time = 2 ** attempt
+                    logger.info(f"Retrying Telegram webhook setup in {wait_time} seconds...")
                     await asyncio.sleep(wait_time)
             if not webhook_setup_successful:
-                 logger.critical("CRITICAL: Failed to set webhook after multiple retries. Bot may not receive updates in webhook mode.")
-                 full_webhook_url = "N/A (Setup FAILED!)"
-
+                 logger.critical("CRITICAL: Failed to set webhook with Telegram after multiple retries.")
+                 full_webhook_url_display = "N/A (Telegram Webhook Setup FAILED!)"
     else:
-        logger.info("Skipping webhook setup (Polling mode or invalid config/token).")
-        full_webhook_url = "N/A (Polling)"
+        logger.info("Skipping Telegram webhook setup (Not in USE_WEBHOOK mode or missing critical configs).")
 
-
+    # JobQueue and Admin notification logic remains the same
     if app.job_queue: logger.info(f"JobQueue initialized. Jobs: {len(app.job_queue.jobs())}")
     else: logger.warning("JobQueue not available.")
 
     if ADMIN_CHAT_ID:
-        mode = "Webhook (Active)" if webhook_setup_successful else ("Webhook (Setup FAILED!)" if USE_WEBHOOK else "Polling")
+        mode_display = "Webhook (TG Ok)" if webhook_setup_successful else \
+                       ("Webhook (TG Fail)" if USE_WEBHOOK else "Polling")
         try:
             bot_info = await app.bot.get_me()
-            # Use escape_markdown for user-generated or potentially unsafe content
             from telegram.helpers import escape_markdown
             safe_bot_username = escape_markdown(bot_info.username if bot_info.username else "N/A_BOT_USERNAME", version=2)
-            safe_webhook_url = escape_markdown(full_webhook_url, version=2)
-            startup_message = f"✅ *Z1\\-Gray Bot Online*\n*Mode:* `{mode}`\n*Node:* `@{safe_bot_username}`\n*TS:* `{time.strftime('%Y-%m-%d %H:%M:%S %Z')}`"
-            if USE_WEBHOOK: startup_message += f"\n*Webhook:* `{safe_webhook_url}`" # Always show webhook URL if USE_WEBHOOK is true
+            safe_webhook_url_display = escape_markdown(full_webhook_url_display, version=2)
+            startup_message = (f"✅ *Z1\\-Gray Bot Online*\n"
+                               f"*Mode:* `{mode_display}`\n"
+                               f"*Node:* `@{safe_bot_username}`\n"
+                               f"*TS:* `{time.strftime('%Y-%m-%d %H:%M:%S %Z')}`")
+            if USE_WEBHOOK:
+                startup_message += f"\n*App Listening Path:* `{escape_markdown(FINAL_WEBHOOK_PATH, version=2)}`"
+                startup_message += f"\n*Telegram Endpoint:* `{safe_webhook_url_display}`"
             await app.bot.send_message(chat_id=ADMIN_CHAT_ID, text=startup_message, parse_mode=ParseMode.MARKDOWN_V2)
             logger.info(f"Startup notification sent to ADMIN_CHAT_ID: {ADMIN_CHAT_ID}")
-        except Exception as e: logger.error(f"Failed to send startup notification: {e}")
+        except Exception as e: logger.error(f"Failed to send startup notification: {e}", exc_info=True)
+
 
 # --- Conversation Fallback Handler ---
 async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
     user_id_log = user.id if user else "N/A"
-    # ✅ Item 5 (from review): Use STATE_NAME_MAP for logging state
     current_state_val = context.user_data.get(ConversationHandler.STATE) if context.user_data else None
-    state_name = STATE_NAME_MAP.get(current_state_val, f"UNKNOWN({current_state_val})") if current_state_val is not None else "N/A"
+    state_name = STATE_NAME_MAP.get(current_state_val, f"UNKNOWN_S({current_state_val})") if current_state_val is not None else "N/A"
     logger.info(f"[CONV_CANCEL] User {user_id_log} (State: {state_name}) initiated /cancel.")
-    # ✅ Item 2 (from review): Clear user_data on cancel
     if context.user_data: context.user_data.clear()
     await update.message.reply_text(
-        "`[PROTOCOL_SESSION_TERMINATED]`\n`User directive acknowledged. System reset.`\n`/start` `to re-initiate protocol.`", # Use backticks for code font
+        "`[PROTOCOL_SESSION_TERMINATED]`\n`User directive acknowledged. System reset.`\n`/start` `to re-initiate protocol.`",
         parse_mode=ParseMode.MARKDOWN_V2
     )
     return ConversationHandler.END
@@ -230,105 +253,155 @@ async def run_bot():
     global application
     logger.info("Booting Z1-Gray System Core...")
 
-    # ✅ Item 6 (from review): Strict BOT_TOKEN Check
-    if not BOT_TOKEN or BOT_TOKEN == "CRITICAL_FAILURE_TOKEN_MISSING": # More specific check
-        logger.critical("FATAL: Invalid or missing BOT_TOKEN configuration. Halting execution.")
-        raise RuntimeError("Invalid BOT_TOKEN configuration. Cannot start bot.")
+    if not BOT_TOKEN or BOT_TOKEN == "CRITICAL_FAILURE_TOKEN_MISSING":
+        logger.critical("FATAL: Invalid or missing BOT_TOKEN configuration.")
+        raise RuntimeError("Invalid BOT_TOKEN. Cannot start bot.")
 
-    setup_secure_webhook_path() # Determine secure path if using webhook
+    setup_secure_webhook_path() # Sets FINAL_WEBHOOK_PATH
 
-    # --- Application Builder ---
-    # ✅ Item 4 (from review): Persistence setup (uncomment to enable)
     persistence = None
-    # persistence_path = os.getenv("PERSISTENCE_PATH", "z1_gray_persistence.pkl")
-    # try:
-    #     persistence = PicklePersistence(filepath=persistence_path)
-    #     logger.info(f"PicklePersistence enabled: {persistence_path}")
-    # except Exception as e:
-    #     logger.error(f"Failed to initialize PicklePersistence: {e}. Persistence disabled.")
+    # ... persistence setup if needed ...
 
-    # FIXED: Removed drop_pending_updates from ApplicationBuilder
+    # PTB v20 ApplicationBuilder pattern
     application_builder = (
         ApplicationBuilder().token(BOT_TOKEN)
-        .post_init(post_initialization_hook)
-        # .persistence(persistence) # Enable if configured
-        # .concurrent_updates(True) # Optional performance tuning
+        .post_init(post_initialization_hook) # post_init IS a v20 feature
+        # .persistence(persistence)
     )
-    application = application_builder.build()
+    application = application_builder.build() # This creates the Application object for v20
 
-    # --- Conversation Handler ---
-    # ✅ Item 2 (from review): States MUST map to actual, imported handlers
-    # Replace placeholders like 'awaiting_step_two_ack_handler' with real imports
-    # from handlers.step_2 import handle_step_2_ack_text, handle_step_2_ack_button etc.
-    # ✅ Item 5 (from review): routes.py suggestion noted in comment.
-    # ConversationHandler definition - replace placeholders with actual handlers
+    # ConversationHandler definition
     z1_gray_conversation_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", step_one_entry)], # step_one_entry MUST clear user_data
+        entry_points=[CommandHandler("start", step_one_entry)],
         states={
-            # Example: Assuming step_one_entry returns AWAITING_STEP_TWO_ACK
-            # The job it schedules runs Step 2 messages and prompts the user.
-            AWAITING_STEP_TWO_ACK: [
-                # ✅ Item 3 (from review): Specific filters first
-                MessageHandler(filters.Regex(r'^(OK|Ok|ok|YES|Yes|yes)$'), awaiting_step_two_ack_handler), # REPLACE placeholder
-                CallbackQueryHandler(awaiting_step_two_ack_handler, pattern="^review_diagnostics_pressed$"), # REPLACE placeholder
-                # Fallback *within this state* for other text
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unknown_message) # Use the placeholder defined above
+            STEP_2_AWAITING_REVIEW_CHOICE_STATE: [
+                MessageHandler(filters.Regex(r'^(OK|Ok|ok|YES|Yes|yes)$'), awaiting_step_two_ack_handler),
+                CallbackQueryHandler(awaiting_step_two_ack_handler, pattern="^review_diagnostics_pressed$"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unknown_message)
             ],
-            # Define ALL other states from state_definitions.py here
-            # Map them to their specific handlers imported from handlers/*.py
-            # AWAITING_STEP_THREE_ACK: [ ... handlers ... ],
-            # AWAITING_STEP_FIVE_CHOICE: [ ... handlers ... ],
-            # STEP_5_AWAITING_FINAL_ACTION: [ ... handlers ... ],
-            # STEP_5_FINAL_CHANCE_STATE: [ ... handlers ... ],
-            # STEP_5_REJECTION_WARNING_STATE: [ ... handlers ... ], # If using this state
+            # ... other states
         },
-        fallbacks=[ # Global fallbacks if no state handler matches
+        fallbacks=[
             CommandHandler("cancel", cancel_conversation),
-            MessageHandler(filters.COMMAND, handle_unknown_command), # Use the placeholder defined above
-            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unknown_message), # Use the placeholder defined above
-            CallbackQueryHandler(handle_unknown_callback) # Use the placeholder defined above
+            MessageHandler(filters.COMMAND, handle_unknown_command),
+            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unknown_message),
+            CallbackQueryHandler(handle_unknown_callback)
         ],
         per_user=True,
-        name="z1_gray_funnel_production_v4", # Increment version name
-        allow_reentry=True, # ✅ step_one_entry MUST handle data clearing
-        # persistent=True, # Enable if using persistence object
-        # map_to_state= # Optional advanced state mapping
+        name="z1_gray_funnel_production_v5",
+        allow_reentry=True,
     )
     application.add_handler(z1_gray_conversation_handler)
 
     # --- Start Bot ---
     if USE_WEBHOOK and WEBHOOK_URL and FINAL_WEBHOOK_PATH and BOT_TOKEN and not BOT_TOKEN == "CRITICAL_FAILURE_TOKEN_MISSING":
-        await application.initialize()
-        # FIXED: Handle drop_pending_updates in start_webhook
-        await application.start()
-        logger.info(f"PTB core started for WEBHOOK. Ensure external server handles {FINAL_WEBHOOK_PATH} on port {PORT}.")
-        await shutdown_event.wait()
-    else:
-        logger.info("Starting bot in POLLING mode...")
-        allowed_updates = [Update.MESSAGE, Update.CALLBACK_QUERY] # Example: be specific
-        # FIXED: Move drop_pending_updates to run_polling as parameter
-        await application.run_polling(allowed_updates=allowed_updates, drop_pending_updates=True, stop_signals=[]) # Pass empty list to handle signals manually
+        if FINAL_WEBHOOK_PATH == "webhook_path_not_set_or_needed":
+             logger.critical("CRITICAL: Webhook path not set, cannot start in webhook mode.")
+             return
 
-    # --- Graceful Shutdown ---
-    logger.info("Initiating final application shutdown...")
-    if application and hasattr(application, 'running') and application.running: # Check if application is not None
-        await application.stop()
-    if application: # Check if application is not None
-        await application.shutdown()
-    logger.info("Application shut down successfully.")
+        # This is the section to be replaced by your new suggestion
+        # OLD PTB v20 style:
+        # await application.initialize() # Calls post_init
+        # await application.run_webhook(
+        #     listen="0.0.0.0",
+        #     port=PORT,
+        #     url_path=FINAL_WEBHOOK_PATH,
+        # )
+        # logger.info(f"PTB v20 webhook server running on 0.0.0.0:{PORT} for path {FINAL_WEBHOOK_PATH}")
+        # await shutdown_event.wait()
+
+        # NEW SUGGESTED (v13-like) Webhook Start:
+        # Note: `application.initialize()` is a v20 concept.
+        # For v13, Updater is created, then dispatcher, then handlers, then start_webhook.
+        # If 'application' is truly a v20 Application object, it won't have 'updater'.
+        # This new block assumes 'application' is a v13-like Updater or an object that has 'updater'.
+        # Given the ApplicationBuilder pattern, this is conflicting.
+        # Sticking to v20 pattern with run_webhook is generally preferred for v20.
+        # However, applying your suggested change:
+
+        await application.initialize() # This is v20. It calls post_init hook which calls app.bot.set_webhook.
+
+        # Render绑定的端口 (Render 自动提供 PORT 环境变量)
+        # PORT is already an int from config.settings
+        listen_port = PORT
+        listen_address = "0.0.0.0"  # 必须绑定所有网卡
+        
+        # Use the globally set FINAL_WEBHOOK_PATH, ensure it's not the placeholder
+        if FINAL_WEBHOOK_PATH == "webhook_path_not_set_or_needed" or not FINAL_WEBHOOK_PATH.startswith("/"):
+            logger.critical(f"Cannot start webhook: FINAL_WEBHOOK_PATH is invalid ('{FINAL_WEBHOOK_PATH}').")
+            return
+        webhook_path_for_listener = FINAL_WEBHOOK_PATH
+
+        # The crucial part: ensuring `application.updater.start_webhook` is valid for your PTB version
+        # IF `application` is a v20 `Application` object, it DOES NOT HAVE `.updater`
+        # This will cause an AttributeError if PTB is v20.
+        # This method is from PTB v13.x.
+        if hasattr(application, 'updater') and application.updater is not None: # Check for v13 compatibility
+            logger.info(f"Attempting to start webhook using application.updater.start_webhook (PTB v13 style) on {listen_address}:{listen_port} for path {webhook_path_for_listener}")
+            application.updater.start_webhook(
+                listen=listen_address,
+                port=listen_port,
+                url_path=webhook_path_for_listener,
+                # webhook_url is set in post_initialization_hook by app.bot.set_webhook
+                # For start_webhook, sometimes key_file and cert_file are needed for local HTTPS, but Render handles SSL.
+                # drop_pending_updates can also be a parameter here in some v13 versions.
+            )
+            # For v13, after start_webhook, you often call updater.idle()
+            # application.updater.idle() # This blocks until a signal
+            # Let's use shutdown_event for consistency with overall structure
+            await shutdown_event.wait()
+
+        elif hasattr(application, 'run_webhook'): # This is the PTB v20 method
+            logger.info(f"Attempting to start webhook using application.run_webhook (PTB v20 style) on {listen_address}:{listen_port} for path {webhook_path_for_listener}")
+            await application.run_webhook(
+                listen=listen_address,
+                port=listen_port,
+                url_path=webhook_path_for_listener,
+                # webhook_url should have been set by post_initialization_hook
+                # drop_pending_updates is also handled there by set_webhook.
+            )
+            # run_webhook is blocking and handles signals. No explicit wait or idle needed.
+            # However, if we want our custom signal handler to also do things:
+            await shutdown_event.wait() # This might be redundant if run_webhook handles signals and exits.
+        else:
+            logger.critical("Unsupported PTB application object: Neither 'updater' (v13) nor 'run_webhook' (v20) method found.")
+            return
+
+        logger.info(f"Webhook listening on {listen_address}:{listen_port} for path {webhook_path_for_listener}")
+        # The line below might not be reached if run_webhook or updater.idle() blocks indefinitely
+        # await shutdown_event.wait() # Already called above conditionally
+
+    else: # Polling mode
+        logger.info("Starting bot in POLLING mode...")
+        allowed_updates = [Update.MESSAGE, Update.CALLBACK_QUERY]
+        await application.run_polling(
+            allowed_updates=allowed_updates,
+            drop_pending_updates=True,
+            stop_signals=[signal.SIGINT, signal.SIGTERM]
+        )
+
+    logger.info("Bot's main run function has exited.")
+
 
 # --- Script Entry Point ---
 if __name__ == "__main__":
-    signal.signal(signal.SIGINT, graceful_signal_handler)
-    signal.signal(signal.SIGTERM, graceful_signal_handler)
+    loop = asyncio.get_event_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(graceful_signal_handler_async(s)))
+
     logger.info("Z1-Gray Main Application Bootstrapping Sequence Initiated...")
     try:
         asyncio.run(run_bot())
     except RuntimeError as e:
-        if "Invalid BOT_TOKEN" in str(e): # Check if it's our specific token error
-            pass # Already logged critically in run_bot()
-        else:
-            logger.critical(f"Runtime Error: {e}. Execution halted.", exc_info=True)
-    except (KeyboardInterrupt, SystemExit) as e: logger.info(f"Process terminated by signal ({type(e).__name__}).")
-    except Exception as e: logger.critical(f"FATAL UNHANDLED EXCEPTION at top level: {e}", exc_info=True)
-    finally: logger.info("Z1-Gray Main Application execution cycle concluded.")
+        if "Cannot close a running event loop" in str(e) or "Event loop is closed" in str(e):
+            logger.warning(f"Known RuntimeError during shutdown: {e}")
+        elif "Invalid BOT_TOKEN" in str(e): pass
+        else: logger.critical(f"Runtime Error: {e}. Execution halted.", exc_info=True)
+    except NameError as e:
+        logger.critical(f"FATAL NameError: {e}. Check imports and definitions.", exc_info=True)
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Process terminated by KeyboardInterrupt/SystemExit.")
+    except Exception as e:
+        logger.critical(f"FATAL UNHANDLED EXCEPTION at top level: {e}", exc_info=True)
+    finally:
+        logger.info("Z1-Gray Main Application execution cycle concluded.")
