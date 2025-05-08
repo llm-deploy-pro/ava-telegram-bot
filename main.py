@@ -11,6 +11,8 @@ import secrets
 from urllib.parse import urlparse
 import logging.handlers
 import time
+from pathlib import Path
+from typing import Dict, Any, Optional
 
 # --- Absolute first: Configure sys.path for Render environment (DEBUGGING STEP) ---
 # This is an attempt to forcefully ensure Python can find the 'config' package.
@@ -191,55 +193,50 @@ except ImportError as e:
 # (Placeholders definitions are the same as your last working version for syntax)
 # (Try-except blocks for handlers are the same)
 try:
-    from handlers.step_1 import step_one_entry
+    from handlers.step_1 import start_conversation, handle_confirmation
 except ImportError:
-    logger.error("CRITICAL: H1 Missing (handlers.step_1.step_one_entry). Using placeholder.")
-    async def step_one_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int: # type: ignore
-        if update.message: await update.message.reply_text("[ERR] H1 (step_one_entry) Init Failed due to import error.")
+    logger.error("CRITICAL: H1 Missing (handlers.step_1.start_conversation). Using placeholder.")
+    async def start_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int: # type: ignore
+        if update.message: await update.message.reply_text("[ERR] H1 (start_conversation) Init Failed due to import error.")
         return ConversationHandler.END
 try:
-    from handlers.step_2 import handle_step_2_ack
+    from handlers.step_2 import handle_q1_response
 except ImportError:
-    logger.warning("Placeholder for handle_step_2_ack (handlers.step_2.handle_step_2_ack).")
-    async def handle_step_2_ack(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int: # type: ignore
-        logger.info("PH: S2 Ack triggered")
-        if update.callback_query: await update.callback_query.answer("Placeholder: S2 Ack")
-        elif update.message: await update.message.reply_text("Placeholder: S2 Ack")
-        return AWAITING_STEP_THREE_ACK # type: ignore
+    logger.warning("Placeholder for handle_q1_response (handlers.step_2.handle_q1_response).")
+    async def handle_q1_response(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int: # type: ignore
+        logger.info("PH: S1 Response triggered")
+        if update.message: await update.message.reply_text("Placeholder: S1 Response")
+        return AWAIT_Q2_RESPONSE # type: ignore
 try:
-    from handlers.step_4 import handle_step_4_choice_initiate, handle_step_4_choice_query
+    from handlers.step_3 import handle_q2_response
 except ImportError:
-    logger.warning("Placeholders for handle_step_4_choice_initiate and handle_step_4_choice_query (handlers.step_4).")
-    async def handle_step_4_choice_initiate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int: # type: ignore
-        logger.info("PH: S4 Init Sync triggered")
-        if update.callback_query: await update.callback_query.answer("Placeholder: S4 Init Sync")
-        return STEP_5_AWAITING_FINAL_ACTION # type: ignore
-    async def handle_step_4_choice_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int: # type: ignore
-        logger.info("PH: S4 Query triggered")
-        if update.callback_query: await update.callback_query.answer("Placeholder: S4 Query")
-        return STEP_5_AWAITING_FINAL_ACTION # type: ignore
+    logger.warning("Placeholder for handle_q2_response (handlers.step_3.handle_q2_response).")
+    async def handle_q2_response(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int: # type: ignore
+        logger.info("PH: S2 Response triggered")
+        if update.message: await update.message.reply_text("Placeholder: S2 Response")
+        return AWAIT_DIAGNOSIS_ACK # type: ignore
 try:
-    from handlers.step_5 import handle_final_sync_button, handle_step5_text_input, handle_final_chance_callback, handle_rejection_warning_callback
+    from handlers.step_4 import handle_diagnosis_ack
+except ImportError:
+    logger.warning("Placeholder for handle_diagnosis_ack (handlers.step_4.handle_diagnosis_ack).")
+    async def handle_diagnosis_ack(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int: # type: ignore
+        logger.info("PH: S4 Diagnosis Ack triggered")
+        if update.message: await update.message.reply_text("Placeholder: S4 Diagnosis Ack")
+        return AWAIT_URGENCY_ACK # type: ignore
+try:
+    from handlers.step_5 import handle_urgency_ack, handle_payment_prompt_ack
 except ImportError:
     logger.warning("Placeholders for step_5 handlers (handlers.step_5).")
-    async def handle_final_sync_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int: # type: ignore
-        logger.info("PH: S5 Final Sync Button triggered")
-        if update.callback_query: await update.callback_query.answer("Placeholder: S5 Final Sync")
-        return ConversationHandler.END # type: ignore
-    async def handle_step5_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int: # type: ignore
-        logger.info("PH: S5 Text Input triggered")
-        if update.message: await update.message.reply_text("Placeholder: S5 Text Input")
-        return STEP_5_AWAITING_FINAL_ACTION # type: ignore
-    async def handle_final_chance_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int: # type: ignore
-        logger.info("PH: S5 Final Chance CB triggered")
-        if update.callback_query: await update.callback_query.answer("Placeholder: S5 Final Chance CB")
-        return ConversationHandler.END # type: ignore
-    async def handle_rejection_warning_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int: # type: ignore
-        logger.info("PH: S5 Reject Warn CB triggered")
-        if update.callback_query: await update.callback_query.answer("Placeholder: S5 Reject Warn CB")
-        return STEP_5_FINAL_CHANCE_STATE # type: ignore
+    async def handle_urgency_ack(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int: # type: ignore
+        logger.info("PH: S5 Urgency Ack triggered")
+        if update.message: await update.message.reply_text("Placeholder: S5 Urgency Ack")
+        return AWAIT_PAYMENT_PROMPT_ACK # type: ignore
+    async def handle_payment_prompt_ack(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int: # type: ignore
+        logger.info("PH: S5 Payment Prompt Ack triggered")
+        if update.message: await update.message.reply_text("Placeholder: S5 Payment Prompt Ack")
+        return AWAIT_PAYMENT_PROMPT_ACK # type: ignore
 try:
-    from handlers.unknown import handle_unknown_message, handle_unknown_command, handle_unknown_callback
+    from handlers.unknown import handle_unknown_message, handle_unknown_command, handle_help_command, handle_status_command
 except ImportError:
     logger.warning("Placeholders for unknown handlers (handlers.unknown).")
     async def handle_unknown_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None: # type: ignore
@@ -248,9 +245,12 @@ except ImportError:
     async def handle_unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None: # type: ignore
         logger.info("PH: Unknown command handler triggered")
         if update.message: await update.message.reply_text("Placeholder: Unknown command.")
-    async def handle_unknown_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None: # type: ignore
-        logger.info("PH: Unknown callback handler triggered")
-        if update.callback_query: await update.callback_query.answer("Placeholder: Unknown callback")
+    async def handle_help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None: # type: ignore
+        logger.info("PH: Help command handler triggered")
+        if update.message: await update.message.reply_text("Placeholder: Help command.")
+    async def handle_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None: # type: ignore
+        logger.info("PH: Status command handler triggered")
+        if update.message: await update.message.reply_text("Placeholder: Status command.")
 
 
 # --- Global Variables ---
@@ -428,17 +428,45 @@ async def run_bot() -> None:
         sys.exit(f"FATAL: Failed to build PTB Application: {e_build}")
 
     # --- Define ConversationHandler ---
-    # (Same as before)
     z1_gray_conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", step_one_entry)],
+        entry_points=[CommandHandler("start", start_conversation)],
         states={
-            AWAITING_STEP_TWO_ACK: [MessageHandler(filters.Regex(r'^(OK|Ok|ok|YES|Yes|yes)$'), handle_step_2_ack), CallbackQueryHandler(handle_step_2_ack, pattern="^review_diagnostics_pressed$"), MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unknown_message)],
-            AWAITING_STEP_FIVE_CHOICE: [CallbackQueryHandler(handle_step_4_choice_initiate, pattern="^step4_initiate_sync$"), CallbackQueryHandler(handle_step_4_choice_query, pattern="^step4_query_necessity$"), MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unknown_message)],
-            STEP_5_AWAITING_FINAL_ACTION: [CallbackQueryHandler(handle_final_sync_button, pattern="^final_sync_initiated$"), MessageHandler(filters.TEXT & ~filters.COMMAND, handle_step5_text_input)],
-            STEP_5_FINAL_CHANCE_STATE: [CallbackQueryHandler(handle_final_sync_button, pattern="^final_sync_initiated$"), MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unknown_message)],
+            CONFIRM_START: [
+                MessageHandler(filters.Regex(r'^(Yes|yes|YES|Y|y)$'), handle_confirmation),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unknown_message)
+            ],
+            AWAIT_Q1_RESPONSE: [
+                MessageHandler(filters.Regex(r'^[ABC]$'), handle_q1_response),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unknown_message)
+            ],
+            AWAIT_Q2_RESPONSE: [
+                MessageHandler(filters.Regex(r'^(Yes|yes|YES|Y|y|No|no|NO|N|n)$'), handle_q2_response),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unknown_message)
+            ],
+            AWAIT_DIAGNOSIS_ACK: [
+                MessageHandler(filters.Regex(r'^(OK|Ok|ok|YES|Yes|yes)$'), handle_diagnosis_ack),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unknown_message)
+            ],
+            AWAIT_URGENCY_ACK: [
+                MessageHandler(filters.Regex(r'^(OK|Ok|ok|YES|Yes|yes)$'), handle_urgency_ack),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unknown_message)
+            ],
+            AWAIT_PAYMENT_PROMPT_ACK: [
+                MessageHandler(filters.Regex(r'^(OK|Ok|ok|YES|Yes|yes)$'), handle_payment_prompt_ack),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unknown_message)
+            ]
         },
-        fallbacks=[CommandHandler("cancel", cancel_conversation), MessageHandler(filters.COMMAND, handle_unknown_command), MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.StatusUpdate.WEB_APP_DATA, handle_unknown_message), CallbackQueryHandler(handle_unknown_callback)],
-        per_user=True, name="z1_gray_funnel_aiohttp_prod", allow_reentry=True, persistent=(persistence is not None),
+        fallbacks=[
+            CommandHandler("cancel", cancel_conversation),
+            CommandHandler("help", handle_help_command),
+            CommandHandler("status", handle_status_command),
+            MessageHandler(filters.COMMAND, handle_unknown_command),
+            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unknown_message)
+        ],
+        per_user=True,
+        name="z1_gray_funnel",
+        allow_reentry=True,
+        persistent=(persistence is not None)
     )
     application.add_handler(z1_gray_conv_handler)
 
