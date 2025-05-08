@@ -62,6 +62,20 @@ DEFINED_USER_INTERACTION_STATES = [
     STEP_5_FINAL_CHANCE_STATE,
 ]
 
+# --- State Name Map ---
+# A mapping from state integer values to their string names.
+# This is crucial for logging in main.py and for general debugging.
+# The keys are the state constants, and values are their string representations.
+STATE_NAME_MAP = {
+    STEP_2_AWAITING_REVIEW_CHOICE_STATE: "STEP_2_AWAITING_REVIEW_CHOICE_STATE",
+    STEP_4_AWAITING_USER_DECISION_STATE: "STEP_4_AWAITING_USER_DECISION_STATE",
+    STEP_5_CTA_TEXT_INPUT_STATE: "STEP_5_CTA_TEXT_INPUT_STATE",
+    STEP_5_FINAL_CHANCE_STATE: "STEP_5_FINAL_CHANCE_STATE",
+    # If you add more states above, remember to add them here as well.
+    # Example for a hypothetical new state:
+    # NEW_EXAMPLE_STATE : "NEW_EXAMPLE_STATE",
+}
+
 # Note on "Forbidden Input Stage" or "Allow Input Stage":
 # These concepts are implemented by *how* handlers are defined for each
 # specific state in `main.py`'s `ConversationHandler`.
@@ -73,4 +87,5 @@ DEFINED_USER_INTERACTION_STATES = [
 # at this definition level.
 
 # Reminder: Do not include logging or other runtime logic in this definitions file.
-# Its sole purpose is to provide a centralized, consistent set of state constants.
+# Its sole purpose is to provide a centralized, consistent set of state constants
+# and the STATE_NAME_MAP.

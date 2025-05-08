@@ -14,6 +14,7 @@ from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import (
     ApplicationBuilder,
+    Application,  # ✅ ADDED THIS IMPORT
     CommandHandler,
     ConversationHandler,
     MessageHandler,
@@ -110,7 +111,9 @@ except ImportError:
     async def handle_unknown_callback(u: Update, c: ContextTypes.DEFAULT_TYPE): # Added type hints
         if u.callback_query:
             await u.callback_query.answer("Unknown callback action.", show_alert=False)
-        await u.effective_message.reply_text("[SYS] Unknown input (callback).") # type: ignore
+        # It's good practice to reply to the message that triggered the callback if possible
+        if u.effective_message:
+            await u.effective_message.reply_text("[SYS] Unknown input (callback).") # type: ignore
         return
 
 try:
@@ -125,7 +128,7 @@ except ImportError:
 
 # --- Global Variables ---
 shutdown_event = asyncio.Event()
-application: ApplicationBuilder.application_type | None = None
+application: Application | None = None # ✅ MODIFIED THIS LINE
 FINAL_WEBHOOK_PATH = None
 
 # --- Secure Webhook Path Generation ---
@@ -149,7 +152,7 @@ def graceful_signal_handler(sig, frame):
     else: shutdown_event.set()
 
 # --- Post Initialization Hook ---
-async def post_initialization_hook(app: ApplicationBuilder.application_type) -> None:
+async def post_initialization_hook(app: Application) -> None: # ✅ MODIFIED THIS LINE
     global FINAL_WEBHOOK_PATH
     webhook_setup_successful = False
     allowed_updates = [Update.MESSAGE, Update.CALLBACK_QUERY] # Be specific
@@ -306,8 +309,10 @@ async def run_bot():
 
     # --- Graceful Shutdown ---
     logger.info("Initiating final application shutdown...")
-    if hasattr(application, 'running') and application.running: await application.stop()
-    await application.shutdown()
+    if application and hasattr(application, 'running') and application.running: # Check if application is not None
+        await application.stop()
+    if application: # Check if application is not None
+        await application.shutdown()
     logger.info("Application shut down successfully.")
 
 # --- Script Entry Point ---
