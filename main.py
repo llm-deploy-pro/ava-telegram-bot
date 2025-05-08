@@ -299,77 +299,39 @@ async def run_bot():
              logger.critical("CRITICAL: Webhook path not set, cannot start in webhook mode.")
              return
 
-        # This is the section to be replaced by your new suggestion
-        # OLD PTB v20 style:
-        # await application.initialize() # Calls post_init
-        # await application.run_webhook(
-        #     listen="0.0.0.0",
-        #     port=PORT,
-        #     url_path=FINAL_WEBHOOK_PATH,
-        # )
-        # logger.info(f"PTB v20 webhook server running on 0.0.0.0:{PORT} for path {FINAL_WEBHOOK_PATH}")
-        # await shutdown_event.wait()
-
-        # NEW SUGGESTED (v13-like) Webhook Start:
-        # Note: `application.initialize()` is a v20 concept.
-        # For v13, Updater is created, then dispatcher, then handlers, then start_webhook.
-        # If 'application' is truly a v20 Application object, it won't have 'updater'.
-        # This new block assumes 'application' is a v13-like Updater or an object that has 'updater'.
-        # Given the ApplicationBuilder pattern, this is conflicting.
-        # Sticking to v20 pattern with run_webhook is generally preferred for v20.
-        # However, applying your suggested change:
-
-        await application.initialize() # This is v20. It calls post_init hook which calls app.bot.set_webhook.
-
-        # Render绑定的端口 (Render 自动提供 PORT 环境变量)
-        # PORT is already an int from config.settings
-        listen_port = PORT
-        listen_address = "0.0.0.0"  # 必须绑定所有网卡
-        
-        # Use the globally set FINAL_WEBHOOK_PATH, ensure it's not the placeholder
-        if FINAL_WEBHOOK_PATH == "webhook_path_not_set_or_needed" or not FINAL_WEBHOOK_PATH.startswith("/"):
-            logger.critical(f"Cannot start webhook: FINAL_WEBHOOK_PATH is invalid ('{FINAL_WEBHOOK_PATH}').")
-            return
-        webhook_path_for_listener = FINAL_WEBHOOK_PATH
-
-        # The crucial part: ensuring `application.updater.start_webhook` is valid for your PTB version
-        # IF `application` is a v20 `Application` object, it DOES NOT HAVE `.updater`
-        # This will cause an AttributeError if PTB is v20.
-        # This method is from PTB v13.x.
-        if hasattr(application, 'updater') and application.updater is not None: # Check for v13 compatibility
-            logger.info(f"Attempting to start webhook using application.updater.start_webhook (PTB v13 style) on {listen_address}:{listen_port} for path {webhook_path_for_listener}")
-            application.updater.start_webhook(
-                listen=listen_address,
-                port=listen_port,
-                url_path=webhook_path_for_listener,
-                # webhook_url is set in post_initialization_hook by app.bot.set_webhook
-                # For start_webhook, sometimes key_file and cert_file are needed for local HTTPS, but Render handles SSL.
-                # drop_pending_updates can also be a parameter here in some v13 versions.
+        # Fixed webhook startup section - using PTB v20 style
+        try:
+            logger.info(f"Starting webhook server, listening at 0.0.0.0:{PORT}, path: {FINAL_WEBHOOK_PATH}")
+            
+            # Key fix here - using the correct async approach with v20 Application
+            await application.initialize()  # Initialize app (will call post_init hook)
+            await application.start()  # Start the application (necessary preparation)
+            
+            # Proper webhook setup
+            await application.bot.set_webhook(
+                url=f"{WEBHOOK_URL.rstrip('/')}{FINAL_WEBHOOK_PATH}",
+                allowed_updates=[Update.MESSAGE, Update.CALLBACK_QUERY],
+                drop_pending_updates=True
             )
-            # For v13, after start_webhook, you often call updater.idle()
-            # application.updater.idle() # This blocks until a signal
-            # Let's use shutdown_event for consistency with overall structure
-            await shutdown_event.wait()
-
-        elif hasattr(application, 'run_webhook'): # This is the PTB v20 method
-            logger.info(f"Attempting to start webhook using application.run_webhook (PTB v20 style) on {listen_address}:{listen_port} for path {webhook_path_for_listener}")
-            await application.run_webhook(
-                listen=listen_address,
-                port=listen_port,
-                url_path=webhook_path_for_listener,
-                # webhook_url should have been set by post_initialization_hook
-                # drop_pending_updates is also handled there by set_webhook.
+            
+            # Use WebhookServer for v20
+            from telegram.ext._utils.webhookhandler import WebhookServer
+            webhook_server = WebhookServer(
+                listen="0.0.0.0",
+                port=PORT, 
+                url_path=FINAL_WEBHOOK_PATH,
+                webhook_app=application.webhook_app
             )
-            # run_webhook is blocking and handles signals. No explicit wait or idle needed.
-            # However, if we want our custom signal handler to also do things:
-            await shutdown_event.wait() # This might be redundant if run_webhook handles signals and exits.
-        else:
-            logger.critical("Unsupported PTB application object: Neither 'updater' (v13) nor 'run_webhook' (v20) method found.")
+            
+            # Start the web server
+            await webhook_server.serve_forever()
+            
+            logger.info(f"Webhook server successfully started, listening at 0.0.0.0:{PORT} on path {FINAL_WEBHOOK_PATH}")
+            await shutdown_event.wait()  # Wait for shutdown signal
+            
+        except Exception as e:
+            logger.critical(f"Failed to start webhook server: {e}", exc_info=True)
             return
-
-        logger.info(f"Webhook listening on {listen_address}:{listen_port} for path {webhook_path_for_listener}")
-        # The line below might not be reached if run_webhook or updater.idle() blocks indefinitely
-        # await shutdown_event.wait() # Already called above conditionally
 
     else: # Polling mode
         logger.info("Starting bot in POLLING mode...")
