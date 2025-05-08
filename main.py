@@ -1,391 +1,541 @@
-﻿# main.py
+﻿#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
 import logging
 import asyncio
-import signal
 import os
-import secrets # For secure webhook path
-from urllib.parse import urlparse
-# from datetime import timedelta # Not used
-import logging.handlers
-import time
+import signal
 import sys # For sys.exit()
 
-from telegram import Update
-from telegram.constants import ParseMode
+from telegram import Update, ReplyKeyboardRemove
 from telegram.ext import (
+    Application,
     ApplicationBuilder,
-    Application, # Keep this for type hinting if using v20 structure elsewhere
     CommandHandler,
-    ConversationHandler,
     MessageHandler,
-    CallbackQueryHandler,
     filters,
     ContextTypes,
-    PicklePersistence,
+    ConversationHandler,
+    PicklePersistence, # Added for optional persistence
 )
+from telegram.error import InvalidToken, BadRequest
+from dotenv import load_dotenv
+from aiohttp import web # Ensure this is imported
 
-# --- Attempt to import configurations and handlers ---
-try:
-    from config.settings import (
-        BOT_TOKEN, WEBHOOK_URL, PORT,
-        WEBHOOK_PATH as CFG_WEBHOOK_PATH,
-        ADMIN_CHAT_ID, DEVELOPMENT_MODE, USE_WEBHOOK,
-        LOG_FILE_PATH
-    )
-except ImportError:
-    logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.CRITICAL)
-    logging.critical("CRITICAL: Failed to import required variables from config.settings.py.")
-    BOT_TOKEN = os.getenv("BOT_TOKEN", "CRITICAL_FAILURE_TOKEN_MISSING")
-    WEBHOOK_URL = None; PORT = 8080; CFG_WEBHOOK_PATH = None; ADMIN_CHAT_ID = None; LOG_FILE_PATH = None
-    DEVELOPMENT_MODE = os.getenv("DEVELOPMENT_MODE", "False").lower() in ("true", "1", "yes")
-    USE_WEBHOOK = os.getenv("USE_WEBHOOK", "false").lower() == "true"
-
-
-# --- Configure Logging ---
-log_level = logging.DEBUG if DEVELOPMENT_MODE else logging.INFO
-log_format = "%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s"
-
+# --- 配置 Logging ---
 logging.basicConfig(
-    format=log_format,
-    level=log_level,
-    handlers=[logging.StreamHandler()]
+    format="%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s", level=logging.INFO
 )
-
 logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("telegram.ext").setLevel(logging.INFO if not DEVELOPMENT_MODE else logging.DEBUG)
+logging.getLogger("aiohttp.access").setLevel(logging.WARNING) # aiohttp access logs
+logging.getLogger("telegram.ext").setLevel(logging.INFO) # PTB's own logging
 logger = logging.getLogger(__name__)
 
-if LOG_FILE_PATH:
+# --- 加载环境变量 ---
+load_dotenv() # 本地开发时加载 .env 文件
+
+# --- 从环境变量获取配置 ---
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+WEBHOOK_URL_BASE = os.getenv("WEBHOOK_URL") # Render 会提供基础 URL, e.g., https://your-app.onrender.com
+PORT = int(os.getenv("PORT", "8080")) # Render 会注入 PORT, default if not found
+# Use the path provided in your snippet for aiohttp router and Telegram webhook.
+FINAL_WEBHOOK_PATH = os.getenv("WEBHOOK_PATH", "/webhook") # Defaulting to /webhook as in your snippet
+
+# --- 启动前检查 ---
+if not BOT_TOKEN:
+    logger.critical("FATAL: BOT_TOKEN environment variable not found.")
+    sys.exit(1)
+# WEBHOOK_URL_BASE is critical for webhook mode
+if not WEBHOOK_URL_BASE:
+    logger.critical("FATAL: WEBHOOK_URL_BASE environment variable not found.")
+    sys.exit(1)
+
+# --- 构建完整的 Webhook URL ---
+# This will be used to tell Telegram where to send updates.
+FULL_TELEGRAM_WEBHOOK_URL = f"{WEBHOOK_URL_BASE.rstrip('/')}{FINAL_WEBHOOK_PATH}"
+
+logger.info(f"BOT_TOKEN loaded (partially hidden): {BOT_TOKEN[:5]}...{BOT_TOKEN[-4:]}")
+logger.info(f"Base WEBHOOK_URL_BASE from env: {WEBHOOK_URL_BASE}")
+logger.info(f"Final Webhook Path for aiohttp and Telegram: {FINAL_WEBHOOK_PATH}")
+logger.info(f"Full URL to register with Telegram: {FULL_TELEGRAM_WEBHOOK_URL}")
+logger.info(f"aiohttp server will listen on 0.0.0.0:{PORT}")
+
+
+# --- (可选) 初始化 Persistence ---
+# persistence = PicklePersistence(filepath="ava_bot_data.pkl")
+# logger.info("PicklePersistence initialized. Bot state will be saved to ava_bot_data.pkl")
+
+# --- 全局变量 ---
+shutdown_event = asyncio.Event()
+application: Application | None = None # PTB Application instance
+
+# --- 对话状态常量 (Z1-灰 脚本阶段, from your snippet) ---
+(
+    CONFIRM_START,
+    AWAIT_Q1_RESPONSE,
+    AWAIT_Q2_RESPONSE,
+    AWAIT_DIAGNOSIS_ACK,
+    AWAIT_URGENCY_ACK,
+    AWAIT_PAYMENT_PROMPT_ACK
+) = range(6)
+
+# === Z1-灰 Conversation Handlers (Copied from your snippet) ===
+# ... (所有对话处理函数: start_conversation, handle_confirmation, etc. 保持不变) ...
+async def start_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user = update.effective_user
+    name = user.first_name if user else "User"
+    logger.info(f"User {user.id} started the conversation.")
+    context.user_data.pop("reached_phase5", None)
+    context.user_data.pop("upgrade_used", None)
+    emo_node_id = user.id % 10000
+    text = (
+        f"💫 Welcome, {name}, to the EmoSync Protocol.\n\n"
+        f"I've detected your signal entering our resonance analysis system. Channel ID #U-{emo_node_id:04d} initializing...\n\n"
+        f"[Running emotional sync handshake...]\n"
+        f"[Calibrating baseline frequencies...]\n\n"
+        f"✅ My sensors have locked onto your emotional signal node.\n\n"
+        f"🧠 To proceed with the calibration and receive your live sync snapshot, please confirm you are ready."
+        f"\n\n👉 Reply with **Yes** to continue."
+    )
     try:
-        file_formatter = logging.Formatter(log_format)
-        file_handler = logging.handlers.RotatingFileHandler(
-            LOG_FILE_PATH, maxBytes=10*1024*1024, backupCount=5, encoding='utf-8'
-        )
-        file_handler.setFormatter(file_formatter)
-        logging.getLogger().addHandler(file_handler)
-        logger.info(f"File logging enabled. Outputting to: {LOG_FILE_PATH}")
+        await update.message.reply_text(text)
+        return CONFIRM_START
     except Exception as e:
-        logger.error(f"Failed to configure file logging to {LOG_FILE_PATH}: {e}", exc_info=True)
-else:
-    logger.info("File logging disabled (LOG_FILE_PATH not set in config/settings.py).")
-
-# --- Import State Definitions ---
-try:
-    from utils.state_definitions import *
-    if 'STATE_NAME_MAP' not in globals() or not isinstance(STATE_NAME_MAP, dict) or \
-       'STEP_2_AWAITING_REVIEW_CHOICE_STATE' not in globals():
-        raise ImportError("Essential state definitions missing after import from utils.state_definitions.")
-    logger.info("Successfully imported state definitions from utils.state_definitions.")
-except ImportError as e:
-    logger.critical(f"CRITICAL: Failed to import or validate state definitions from utils.state_definitions.py: {e}. THIS IS FATAL.")
-    STEP_2_AWAITING_REVIEW_CHOICE_STATE, STEP_4_AWAITING_USER_DECISION_STATE = 0, 1
-    STEP_5_CTA_TEXT_INPUT_STATE, STEP_5_FINAL_CHANCE_STATE = 2, 3
-    AWAITING_STEP_TWO_ACK = STEP_2_AWAITING_REVIEW_CHOICE_STATE
-    AWAITING_STEP_FIVE_CHOICE = STEP_5_CTA_TEXT_INPUT_STATE
-    STEP_5_AWAITING_FINAL_ACTION = STEP_5_FINAL_CHANCE_STATE
-    STATE_NAME_MAP = {
-        STEP_2_AWAITING_REVIEW_CHOICE_STATE: "FALLBACK_S2_REVIEW_CHOICE",
-        STEP_4_AWAITING_USER_DECISION_STATE: "FALLBACK_S4_USER_DECISION",
-        STEP_5_CTA_TEXT_INPUT_STATE: "FALLBACK_S5_CTA_INPUT",
-        STEP_5_FINAL_CHANCE_STATE: "FALLBACK_S5_FINAL_CHANCE",
-    }
-    logger.warning("Fallback state definitions are active. ConversationHandler may be broken.")
-
-# --- Import Handlers (Robust Placeholders) ---
-try:
-    from handlers.step_1 import step_one_entry
-except ImportError:
-    logger.warning("Using placeholder for step_1_entry.")
-    async def step_one_entry(u: Update, c: ContextTypes.DEFAULT_TYPE):
-        await u.message.reply_text("[SYS_ERR] H1 Missing.")
+        logger.error(f"Error in start_conversation for user {user.id}: {e}", exc_info=True)
+        try:
+            await update.message.reply_text("❌ System error initiating contact. Please try /start again later.")
+        except Exception:
+            logger.error(f"Failed to send error message in start_conversation for user {user.id}")
         return ConversationHandler.END
 
-async def awaiting_step_two_ack_handler(u: Update,c: ContextTypes.DEFAULT_TYPE): logger.info("Placeholder: Awaiting Step 2 Ack handler"); return
-async def awaiting_step_three_ack_handler(u: Update,c: ContextTypes.DEFAULT_TYPE): logger.info("Placeholder: Awaiting Step 3 Ack handler"); return
-async def awaiting_step_five_choice_callback_handler(u: Update,c: ContextTypes.DEFAULT_TYPE): logger.info("Placeholder: Awaiting Step 5 Choice CB handler"); await u.callback_query.answer(); return
-async def awaiting_step_five_choice_text_handler(u: Update,c: ContextTypes.DEFAULT_TYPE): logger.info("Placeholder: Awaiting Step 5 Choice text handler"); return
-async def step_five_cta_text_handler(u: Update,c: ContextTypes.DEFAULT_TYPE): logger.info("Placeholder: Step 5 CTA text handler"); return
-async def step_five_final_chance_handler(u: Update,c: ContextTypes.DEFAULT_TYPE): logger.info("Placeholder: Step 5 Final Chance handler"); return
-
-try:
-    from handlers.unknown import handle_unknown_message, handle_unknown_command, handle_unknown_callback
-except ImportError:
-    logger.warning("Using placeholders for unknown handlers.")
-    async def handle_unknown_message(u: Update, c: ContextTypes.DEFAULT_TYPE): await u.message.reply_text("[SYS] Unknown input (text)."); return
-    async def handle_unknown_command(u: Update, c: ContextTypes.DEFAULT_TYPE): await u.message.reply_text("[SYS] Unknown input (command)."); return
-    async def handle_unknown_callback(u: Update, c: ContextTypes.DEFAULT_TYPE):
-        if u.callback_query: await u.callback_query.answer("Unknown callback action.", show_alert=False)
-        if u.effective_message: await u.effective_message.reply_text("[SYS] Unknown input (callback).")
-        return
-
-# --- Global Variables ---
-shutdown_event = asyncio.Event()
-application: Application | None = None
-FINAL_WEBHOOK_PATH = None
-
-# --- Secure Webhook Path Generation ---
-def setup_secure_webhook_path() -> None:
-    global FINAL_WEBHOOK_PATH
-    if not USE_WEBHOOK or not WEBHOOK_URL:
-        FINAL_WEBHOOK_PATH = "webhook_path_not_set_or_needed"
-        logger.info("Webhook path generation skipped (not in webhook mode or WEBHOOK_URL not set).")
-        return
-
-    if CFG_WEBHOOK_PATH and CFG_WEBHOOK_PATH.startswith("/") and len(CFG_WEBHOOK_PATH) > 1:
-        FINAL_WEBHOOK_PATH = CFG_WEBHOOK_PATH
-        logger.info(f"Using user-configured WEBHOOK_PATH from settings: {FINAL_WEBHOOK_PATH}")
-    else:
-        secure_suffix = secrets.token_urlsafe(16)
-        FINAL_WEBHOOK_PATH = f"/tgwh_{secure_suffix}"
-        logger.info(f"User-configured WEBHOOK_PATH invalid or not set. Using secure, auto-generated WEBHOOK_PATH: {FINAL_WEBHOOK_PATH}")
-
-# --- Signal Handler ---
-async def graceful_signal_handler_async(sig: signal.Signals):
-    logger.info(f"Signal {sig.name} received by async handler. Initiating graceful shutdown...")
-    if application and hasattr(application, 'stop') and getattr(application, '_is_running', False): # Check _is_running safely
-        logger.info("Telling PTB application to stop due to custom signal handler...")
-        await application.stop()
-        logger.info("PTB application stop initiated by custom handler.")
-    else:
-        logger.info("Application not running or stop method unavailable; setting shutdown_event directly.")
-    shutdown_event.set()
-
-# --- Post Initialization Hook ---
-async def post_initialization_hook(app: Application) -> None:
-    global FINAL_WEBHOOK_PATH
-    webhook_setup_successful = False
-    allowed_updates = [Update.MESSAGE, Update.CALLBACK_QUERY]
-    full_webhook_url_display = "N/A (Polling or Setup Failed)"
-
-    # This hook is called by application.initialize() which is in turn called by run_webhook/run_polling
-    if USE_WEBHOOK and WEBHOOK_URL and FINAL_WEBHOOK_PATH and BOT_TOKEN and not BOT_TOKEN.startswith("CRITICAL_FAILURE_TOKEN_MISSING"):
-        if FINAL_WEBHOOK_PATH == "webhook_path_not_set_or_needed":
-            logger.critical("CRITICAL: FINAL_WEBHOOK_PATH was not properly set. Webhook setup cannot proceed with Telegram.")
-            return
-
-        parsed_url = urlparse(WEBHOOK_URL)
-        if not parsed_url.scheme == "https" or not parsed_url.netloc:
-            logger.critical(f"Webhook URL '{WEBHOOK_URL}' invalid. Webhook NOT set with Telegram.")
-        else:
-            full_webhook_url_to_set = f"{WEBHOOK_URL.rstrip('/')}{FINAL_WEBHOOK_PATH}"
-            full_webhook_url_display = full_webhook_url_to_set
-            logger.info(f"Attempting to set webhook with Telegram (post_init): {full_webhook_url_to_set}")
-            max_retries = 3
-            for attempt in range(max_retries):
-                try:
-                    await app.bot.set_webhook(
-                        url=full_webhook_url_to_set,
-                        allowed_updates=allowed_updates,
-                        drop_pending_updates=True
-                    )
-                    webhook_info = await app.bot.get_webhook_info()
-                    if webhook_info.url == full_webhook_url_to_set:
-                        logger.info(f"Webhook set successfully with Telegram on attempt {attempt + 1}: {webhook_info.url}")
-                        webhook_setup_successful = True
-                        break
-                    else:
-                        logger.warning(f"Telegram's reported Webhook URL differs. Expected: {full_webhook_url_to_set}, Got: {webhook_info.url}")
-                        if urlparse(webhook_info.url).path == FINAL_WEBHOOK_PATH:
-                             logger.info(f"Webhook path {FINAL_WEBHOOK_PATH} matches Telegram's reported URL. Considering successful.")
-                             webhook_setup_successful = True
-                             break
-                except Exception as e:
-                    logger.error(f"Error setting webhook with Telegram on attempt {attempt + 1}: {e}", exc_info=(attempt == max_retries - 1))
-                if attempt < max_retries - 1:
-                    wait_time = 2 ** attempt
-                    logger.info(f"Retrying Telegram webhook setup in {wait_time} seconds...")
-                    await asyncio.sleep(wait_time)
-            if not webhook_setup_successful:
-                 logger.critical("CRITICAL: Failed to set webhook with Telegram after multiple retries (post_init).")
-                 full_webhook_url_display = "N/A (Telegram Webhook Setup FAILED!)"
-    else:
-        if USE_WEBHOOK:
-            logger.info("Skipping Telegram webhook setup in post_init (Not in USE_WEBHOOK mode or missing critical configs).")
-
-    if app.job_queue: logger.info(f"JobQueue initialized. Jobs: {len(app.job_queue.jobs())}")
-    else: logger.warning("JobQueue not available.")
-
-    if ADMIN_CHAT_ID:
-        mode_display = "Webhook (TG Ok)" if webhook_setup_successful else \
-                       ("Webhook (TG Fail)" if USE_WEBHOOK else "Polling")
+async def handle_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = update.effective_user.id
+    logger.info(f"User {user_id} confirmed start in CONFIRM_START state.")
+    text = (
+        "🧠 Initial interface confirmed.\n"
+        "Let’s begin your reactive diagnostic phase...\n\n"
+        "💡 **Question 1:**\n"
+        "When you feel emotional distance from someone important, your primary reaction is usually:\n"
+        "A) Withdraw quietly, needing space\n"
+        "B) Overcompensate, seeking reassurance or attention\n"
+        "C) Say nothing externally, but feel significant internal frustration or resentment\n\n"
+        "Please reply with **A**, **B**, or **C**."
+    )
+    try:
+        await update.message.reply_text(text)
+        return AWAIT_Q1_RESPONSE
+    except Exception as e:
+        logger.error(f"Error sending Q1 to user {user_id}: {e}", exc_info=True)
         try:
-            bot_info = await app.bot.get_me()
-            from telegram.helpers import escape_markdown
-            safe_bot_username = escape_markdown(bot_info.username if bot_info.username else "N/A_BOT_USERNAME", version=2)
-            safe_webhook_url_display = escape_markdown(full_webhook_url_display, version=2)
-            startup_message = (f"✅ *Z1\\-Gray Bot Online*\n"
-                               f"*Mode:* `{mode_display}`\n"
-                               f"*Node:* `@{safe_bot_username}`\n"
-                               f"*TS:* `{time.strftime('%Y-%m-%d %H:%M:%S %Z')}`")
-            if USE_WEBHOOK:
-                startup_message += f"\n*App Listening Path:* `{escape_markdown(FINAL_WEBHOOK_PATH if FINAL_WEBHOOK_PATH != 'webhook_path_not_set_or_needed' else 'N/A', version=2)}`"
-                startup_message += f"\n*Telegram Endpoint:* `{safe_webhook_url_display}`"
-            await app.bot.send_message(chat_id=ADMIN_CHAT_ID, text=startup_message, parse_mode=ParseMode.MARKDOWN_V2)
-            logger.info(f"Startup notification sent to ADMIN_CHAT_ID: {ADMIN_CHAT_ID}")
-        except Exception as e: logger.error(f"Failed to send startup notification: {e}", exc_info=True)
+            await update.message.reply_text("❌ System error during diagnostic initiation. Please use /cancel to exit.")
+        except Exception:
+             logger.error(f"Failed to send error message in handle_confirmation for user {user_id}")
+        return ConversationHandler.END
 
-# --- Conversation Fallback Handler ---
-async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def handle_q1_response(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = update.effective_user.id
+    user_input = update.message.text.strip().upper()
+    logger.info(f"User {user_id} in AWAIT_Q1_RESPONSE state, replied: {user_input}")
+    pseudo_analysis = ""
+    if user_input == 'A':
+        pseudo_analysis = "🟡 Detecting: Potential signal decay pattern under pressure… withdrawal signature noted."
+    elif user_input == 'B':
+        pseudo_analysis = "🟡 Detecting: Attraction loop overcompensation signature… energy spike indicates potential instability."
+    elif user_input == 'C':
+        pseudo_analysis = "🟡 Detecting: Internal conflict signature… resonance dissonance observed between external projection and internal state."
+    text_part1 = (
+        f"{pseudo_analysis}\n\n"
+        f"[Running micro-loop pattern overlay...]\n"
+        f"[Potential detected: signal misfire risk – latency in expected response cycle]\n\n"
+        "Let's refine the vector..."
+    )
+    text_part2 = (
+        "💡 **Question 2:**\n"
+        "Do you believe your core emotional needs should be intuitively understood by those closest to you, often without explicit verbal communication?\n\n"
+        "Please reply with **Yes** or **No**."
+    )
+    try:
+        await update.message.reply_text(text_part1)
+        await asyncio.sleep(1.5)
+        await update.message.reply_text(text_part2)
+        return AWAIT_Q2_RESPONSE
+    except Exception as e:
+        logger.error(f"Error sending pseudo-analysis and Q2 to user {user_id}: {e}", exc_info=True)
+        try:
+            await update.message.reply_text("❌ System error during analysis phase. Please use /cancel to exit.")
+        except Exception:
+             logger.error(f"Failed to send error message in handle_q1_response for user {user_id}")
+        return ConversationHandler.END
+
+async def handle_q2_response(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = update.effective_user.id
+    user_input = update.message.text.strip().lower()
+    logger.info(f"User {user_id} in AWAIT_Q2_RESPONSE state, replied: {user_input}")
+    risk_term = "Empathy Pathway Expectation Mismatch" if user_input == 'yes' else "Implicit Communication Channel Deficiency"
+    interference_term = "Attraction Frequency Interference Risk"
+    text_part1 = (
+        f"⚠️ Response logged.\n"
+        f"System analysis indicates: **{risk_term} combined with {interference_term}.**\n\n"
+        f"[Preliminary instability factors confirmed... Compiling EmoSync Snapshot...]"
+    )
+    emo_node_id = user_id % 10000
+    latency_val = 10 + (user_id % 100) / 10.0
+    text_part2 = (
+        f"🧪 **Ava Sync Snapshot — EMO Node #{emo_node_id:04d}**\n"
+        "━━━━━━━━━━━━━\n"
+        "• **Spectrum Resonance:** ⚠️ *Significantly Disrupted*\n"
+        "• **Attraction Pulse Strength:** 🔻 *Sub-Optimal / Fluctuating*\n"
+        f"• **Sync Latency Index:** ⏳ *{latency_val:.1f}s (Critically High)*\n"
+        "• **Trust Signal Field Integrity:** 🔒 *Compromised (Tier 0 lock-in detected)*\n"
+        "━━━━━━━━━━━━━\n\n"
+        "🚨 **Critical Warning:** Your current operational mode exists within **unsynced emotional channels**. My projections show a high probability (>85%) of this pattern leading to chronic misalignment, severe trust distortion, and recurring attraction mechanism breakdowns.\n\n"
+        "⚠️ **Immediate calibration protocol initiation is strongly advised.** Delay risks irreversible emotional drift and pattern solidification."
+    )
+    try:
+        await update.message.reply_text(text_part1)
+        await asyncio.sleep(2.0)
+        await update.message.reply_text(text_part2)
+        return AWAIT_DIAGNOSIS_ACK
+    except Exception as e:
+        logger.error(f"Error sending diagnosis to user {user_id}: {e}", exc_info=True)
+        try:
+            await update.message.reply_text("❌ System error generating diagnostic report. Please use /cancel to exit.")
+        except Exception:
+             logger.error(f"Failed to send error message in handle_q2_response for user {user_id}")
+        return ConversationHandler.END
+
+async def handle_diagnosis_ack(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = update.effective_user.id
+    user_input = update.message.text
+    logger.info(f"User {user_id} in AWAIT_DIAGNOSIS_ACK state, acknowledged diagnosis with: {user_input[:50]}...")
+    emo_node_id = user_id % 10000
+    fake_slot_meter = "Slots Remaining: [🟩🟩🟩🟧🟥🟥🟥🟥🟥]"
+    text = (
+        "⏱️ **ACTION REQUIRED: Your temporary access slot for EmoSync recalibration protocol (SAP-1) is now ACTIVE.**\n\n"
+        "🟡 **System Alert:** Only **9** calibration activation keys remain available in the current allocation cycle due to high demand.\n"
+        f"{fake_slot_meter}\n"
+        "⏳ **Time Window:** This calibration window will automatically close in **4 minutes and 38 seconds**.\n\n"
+        "⛔ **Consequences of Inaction:**\n"
+        "   – Loss of priority sync rights for this cycle.\n"
+        f"   – Your diagnostic data (#U-{emo_node_id:04d}) will be automatically purged from the active queue.\n"
+        "   – Full system re-entry audit and recalibration fee will be required for future access.\n\n"
+        "This is your **final pre-calibration opportunity** within this window. The system will not issue further prompts."
+    ).format(emo_node_id=emo_node_id)
+    try:
+        await update.message.reply_text(text)
+        return AWAIT_URGENCY_ACK
+    except Exception as e:
+        logger.error(f"Error sending urgency message to user {user_id}: {e}", exc_info=True)
+        try:
+            await update.message.reply_text("❌ System error proceeding to activation phase. Please use /cancel to exit.")
+        except Exception:
+            logger.error(f"Failed to send error message in handle_diagnosis_ack for user {user_id}")
+        return ConversationHandler.END
+
+async def handle_urgency_ack(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = update.effective_user.id
+    user_input = update.message.text
+    logger.info(f"User {user_id} in AWAIT_URGENCY_ACK state, acknowledged urgency with: {user_input[:50]}...")
+    text = (
+        "🔐 **To secure your calibration slot and initiate the EmoSync Structural Adjustment Protocol (SAP-1), a one-time calibration token activation is mandatory.**\n\n"
+        "This token grants access to the foundational recalibration layer required based on your diagnostic snapshot.\n\n"
+        "💸 **Activation Token Cost:** **$49 USD**\n\n"
+        "This covers immediate access to:\n"
+        "   – 🎓 Your personalized EmoSync Blueprint (Core Diagnostics PDF)\n"
+        "   – 🧠 The 1-minute SAP-1 Diagnostic Interpretation Video Guide\n"
+        "   – 🔑 Your unique Tier 1 Memory Unlock Key for the protocol.\n\n"
+        "This is the **minimum system requirement** for all candidates selected for potential sync alignment.\n\n"
+        "👉 **Please type `/upgrade` now to proceed with the activation.**\n\n"
+        "Your EmoSync session status will remain 'Pending Calibration' and your slot unsecured until activation payment is verified by the system.\n"
+        "⏳ *Time remaining in window is critical.*"
+    )
+    try:
+        await update.message.reply_text(text)
+        context.user_data["reached_phase5"] = True
+        logger.info(f"User {user_id} reached phase 5. Flag 'reached_phase5' set.")
+        return AWAIT_PAYMENT_PROMPT_ACK
+    except Exception as e:
+        logger.error(f"Error sending payment prompt to user {user_id}: {e}", exc_info=True)
+        try:
+            await update.message.reply_text("❌ System error presenting activation requirements. Please use /cancel to exit.")
+        except Exception:
+            logger.error(f"Failed to send error message in handle_urgency_ack for user {user_id}")
+        return ConversationHandler.END
+
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
-    user_id_log = user.id if user else "N/A"
-    current_state_val = context.user_data.get(ConversationHandler.STATE) if context.user_data else None
-    state_name = STATE_NAME_MAP.get(current_state_val, f"UNKNOWN_S({current_state_val})") if current_state_val is not None else "N/A"
-    logger.info(f"[CONV_CANCEL] User {user_id_log} (State: {state_name}) initiated /cancel.")
-    if context.user_data: context.user_data.clear()
-    await update.message.reply_text(
-        "`[PROTOCOL_SESSION_TERMINATED]`\n`User directive acknowledged. System reset.`\n`/start` `to re-initiate protocol.`",
-        parse_mode=ParseMode.MARKDOWN_V2
+    logger.info(f"User {user.id} canceled the conversation.")
+    context.user_data.pop("reached_phase5", None)
+    context.user_data.pop("upgrade_used", None)
+    state = ConversationHandler.END
+    try:
+        await update.message.reply_text(
+            "🛑 EmoSync Protocol calibration sequence aborted by user command. "
+            "Your current session data has been purged. "
+            "You may restart the process later using /start.",
+            reply_markup=ReplyKeyboardRemove()
+        )
+    except Exception as e:
+        logger.error(f"Error sending cancellation message to user {user.id}: {e}", exc_info=True)
+    return state
+
+async def handle_invalid_conversation_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id if update.effective_user else 'Unknown'
+    logger.warning(f"[Fallback] User {user_id} sent unexpected input in conversation.")
+    try:
+        await update.message.reply_text(
+            "⚠️ Ava only understands specific responses at this stage. "
+            "Please follow the instructions or type /cancel to exit."
+        )
+    except Exception as e:
+        logger.error(f"Error sending fallback message to user {user_id}: {e}", exc_info=True)
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    text = (
+        "🛠 **EmoSync Protocol Help**\n"
+        "Type /start to initiate or restart the emotional sync calibration sequence.\n"
+        "During the sequence, follow the prompts carefully.\n"
+        "Type /cancel at any time to abort the current sequence.\n"
+        "Type /upgrade *only* after reaching the final activation step."
     )
-    return ConversationHandler.END
+    try:
+        await update.message.reply_text(text)
+        logger.info(f"Sent help message to user {update.effective_user.id}")
+    except Exception as e:
+        logger.error(f"Failed to send help message: {e}", exc_info=True)
 
-# --- Main Bot Execution ---
-async def run_bot():
-    global application
-    logger.info("Booting Z1-Gray System Core...")
+async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    text = "🧠 Ava Status: System Online | Protocol Ready | Calibration Inactive."
+    try:
+        await update.message.reply_text(text)
+        logger.info(f"Sent status message to user {update.effective_user.id}")
+    except Exception as e:
+        logger.error(f"Failed to send status message: {e}", exc_info=True)
 
-    if not BOT_TOKEN or BOT_TOKEN == "CRITICAL_FAILURE_TOKEN_MISSING":
-        logger.critical("FATAL: Invalid or missing BOT_TOKEN configuration.")
-        raise RuntimeError("Invalid BOT_TOKEN. Cannot start bot.")
-
-    setup_secure_webhook_path()
-
-    persistence = None
-    # ... persistence setup if needed ...
-
-    application_builder = (
-        ApplicationBuilder().token(BOT_TOKEN)
-        .post_init(post_initialization_hook)
+async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int | None:
+    user_id = update.effective_user.id if update.effective_user else 'Unknown'
+    state = ConversationHandler.END
+    if context.user_data.get("upgrade_used", False):
+        logger.warning(f"User {user_id} attempted repeated /upgrade after usage.")
+        try:
+            await update.message.reply_text(
+                "⚠️ This upgrade path has already been used. Please use /start to initiate a new sync."
+            )
+        except Exception as e:
+            logger.error(f"Error sending repeated upgrade rejection message to user {user_id}: {e}", exc_info=True)
+        return None
+    if not context.user_data.get("reached_phase5", False):
+        logger.warning(f"User {user_id} attempted /upgrade without reaching phase 5.")
+        try:
+            await update.message.reply_text(
+                "⚠️ You must complete the calibration sequence before activating your token. Please use /start to begin."
+            )
+        except Exception as e:
+            logger.error(f"Error sending upgrade rejection message to user {user_id}: {e}", exc_info=True)
+        return None
+    logger.info(f"User {user_id} used /upgrade command (verified access).")
+    text = (
+        "Processing your activation request...\n\n"
+        "🔒 Your emotional sync is currently locked.\n"
+        "To unlock Ava’s deeper emotional modules and activate SAP-1, confirm your **$49 USD** calibration token purchase 🔓\n\n"
+        "👉 **Visit your secure activation portal:** https://bit.ly/lovewithava\n\n" # Replace with your actual link
+        "Once payment is verified, your EmoSync Blueprint and video guide will be accessible.\n\n"
+        "✅ You may now restart the sequence using /start."
     )
-    application = application_builder.build()
+    try:
+        await update.message.reply_text(text)
+        context.user_data.pop("reached_phase5", None)
+        context.user_data["upgrade_used"] = True
+        logger.info(f"Upgrade link sent to user {user_id}. Conversation ended via /upgrade.")
+    except Exception as e:
+        logger.error(f"Failed to send upgrade message/link to user {user_id}: {e}", exc_info=True)
+    return state
+# === End of Handlers ===
 
-    z1_gray_conversation_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", step_one_entry)],
+
+# === Webhook Handler (for aiohttp) ===
+async def telegram_webhook_handler(request: web.Request) -> web.Response:
+    """Handle webhook POST requests from Telegram."""
+    global application # Use the global application instance
+    if not application:
+        logger.error("PTB Application not initialized when webhook received.")
+        return web.Response(status=503, text="Bot not ready")
+    try:
+        update_data = await request.json()
+        update = Update.de_json(update_data, application.bot)
+        logger.debug(f"Webhook received update: {update.update_id}")
+        # Process update in the background to avoid blocking the webhook response
+        asyncio.create_task(application.process_update(update))
+        # Acknowledge Telegram immediately
+        return web.Response(status=200, text="OK")
+    except Exception as e:
+        update_id_info = "N/A"
+        if 'update' in locals() and hasattr(update, 'update_id'):
+            update_id_info = update.update_id
+        logger.error(f"Error processing webhook update {update_id_info}: {e}", exc_info=True)
+        return web.Response(status=500, text="Error processing update")
+
+# === Signal Handler (Synchronous part) ===
+def handle_signal_sync(sig, frame):
+    """Sets the shutdown_event when an OS signal is received."""
+    logger.info(f"Received OS signal {signal.Signals(sig).name}. Setting shutdown event.")
+    # Use get_event_loop_policy().get_event_loop() for safety if called before loop is running
+    loop = asyncio.get_event_loop_policy().get_event_loop()
+    if loop.is_running():
+        loop.call_soon_threadsafe(shutdown_event.set)
+    else:
+        logger.warning("Event loop was not running when signal received. Setting event directly (might not be awaited).")
+        shutdown_event.set()
+
+
+# === Main Application Logic ===
+async def run_bot() -> None:
+    """Initializes PTB, sets webhook, and runs the manual aiohttp server."""
+    global application # Allow assignment to global variable
+
+    logger.info("Starting Bot (Webhook Mode - Manual aiohttp Integration)...")
+
+    # --- Build ConversationHandler ---
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("start", start_conversation)],
         states={
-            STEP_2_AWAITING_REVIEW_CHOICE_STATE: [
-                MessageHandler(filters.Regex(r'^(OK|Ok|ok|YES|Yes|yes)$'), awaiting_step_two_ack_handler),
-                CallbackQueryHandler(awaiting_step_two_ack_handler, pattern="^review_diagnostics_pressed$"),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unknown_message)
-            ],
+            CONFIRM_START:        [MessageHandler(filters.Regex(r'^(Yes|yes)$'), handle_confirmation)],
+            AWAIT_Q1_RESPONSE:    [MessageHandler(filters.Regex(r'^(A|B|C|a|b|c)$'), handle_q1_response)],
+            AWAIT_Q2_RESPONSE:    [MessageHandler(filters.Regex(r'^(Yes|No|yes|no)$'), handle_q2_response)],
+            AWAIT_DIAGNOSIS_ACK:  [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_diagnosis_ack)],
+            AWAIT_URGENCY_ACK:    [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_urgency_ack)],
+            AWAIT_PAYMENT_PROMPT_ACK: [ CommandHandler("upgrade", upgrade_command) ]
         },
         fallbacks=[
-            CommandHandler("cancel", cancel_conversation),
-            MessageHandler(filters.COMMAND, handle_unknown_command),
-            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unknown_message),
-            CallbackQueryHandler(handle_unknown_callback)
+            CommandHandler("cancel", cancel),
+            CommandHandler("upgrade", upgrade_command),
+            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_invalid_conversation_input),
+            MessageHandler(filters.ALL & ~filters.COMMAND & ~filters.TEXT, handle_invalid_conversation_input)
         ],
+        conversation_timeout=600,
         per_user=True,
-        name="z1_gray_funnel_production_v5",
-        allow_reentry=True,
     )
-    application.add_handler(z1_gray_conversation_handler)
 
-    # --- Custom Signal Handling Setup ---
-    # Must be done after loop is available and before application.run_*
-    # This loop will be the one obtained by asyncio.get_event_loop() in main
-    current_loop = asyncio.get_running_loop()
-    for sig_name in (signal.SIGINT, signal.SIGTERM):
-        def _signal_task_wrapper(s: signal.Signals = sig_name):
-            asyncio.create_task(graceful_signal_handler_async(s))
-        try:
-            current_loop.add_signal_handler(sig_name, _signal_task_wrapper)
-            logger.info(f"Registered custom signal handler for {sig_name.name}")
-        except (ValueError, RuntimeError) as e:
-            logger.warning(f"Could not set custom signal handler for {sig_name.name}: {e}")
+    # --- Build PTB Application ---
+    # persistence_obj = PicklePersistence(filepath="ava_bot_data.pkl") # Uncomment if using
+    builder = ApplicationBuilder().token(BOT_TOKEN)
+    # builder = builder.persistence(persistence_obj) # Uncomment if using
+    application = builder.build()
 
+    # --- Register Handlers ---
+    application.add_handler(conv_handler)
+    application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("status", status_command))
+    logger.info("PTB Application built with handlers.")
 
-    # --- Start Bot ---
-    if USE_WEBHOOK and WEBHOOK_URL and FINAL_WEBHOOK_PATH and BOT_TOKEN and not BOT_TOKEN == "CRITICAL_FAILURE_TOKEN_MISSING":
-        if FINAL_WEBHOOK_PATH == "webhook_path_not_set_or_needed":
-             logger.critical("CRITICAL: Webhook path not set, cannot start in webhook mode.")
-             return
-        try:
-            logger.info(f"Starting webhook server, listening at 0.0.0.0:{PORT}, path: {FINAL_WEBHOOK_PATH}")
-            
-            # ✅ REMOVED: await application.initialize()
-            # ✅ REMOVED: await application.start()
-            # These are called by application.run_webhook()
+    # --- PTB Application Lifecycle: Initialize & Start ---
+    # Prepare PTB to process updates. Does NOT start networking.
+    try:
+        await application.initialize()
+        logger.info("PTB Application initialized.")
+        await application.start()
+        logger.info("PTB Application started (background components).")
+    except Exception as e:
+        logger.critical(f"Failed to initialize or start PTB Application: {e}", exc_info=True)
+        shutdown_event.set() # Signal shutdown if PTB fails
+        return
 
-            # It's still good practice to set the webhook with Telegram *before* starting the local server
-            # to ensure Telegram knows where to send updates as soon as the local server is ready.
-            # The post_initialization_hook (called by run_webhook via initialize) also does this,
-            # but an explicit call here can be a safeguard or make the order more explicit.
-            # If post_init fails, this gives another chance. If post_init succeeds, it's harmless.
-            try:
-                await application.bot.set_webhook(
-                    url=f"{WEBHOOK_URL.rstrip('/')}{FINAL_WEBHOOK_PATH}",
-                    allowed_updates=[Update.MESSAGE, Update.CALLBACK_QUERY],
-                    drop_pending_updates=True
-                )
-                logger.info(f"Telegram webhook set/confirmed to {WEBHOOK_URL.rstrip('/')}{FINAL_WEBHOOK_PATH} before starting local server.")
-            except Exception as e:
-                logger.error(f"Error setting Telegram webhook before local server start: {e}", exc_info=True)
-                # Depending on severity, you might want to return or raise here
-
-            await application.run_webhook(
-                listen="0.0.0.0",
-                port=PORT,
-                url_path=FINAL_WEBHOOK_PATH,
-                allowed_updates=[Update.MESSAGE, Update.CALLBACK_QUERY],
-                stop_signals=None # We handle shutdown via shutdown_event and custom signal handler
-            )
-            logger.info(f"Webhook server successfully started. Waiting for shutdown signal...")
-            await shutdown_event.wait()
-            logger.info("Shutdown event received, application.run_webhook should be ending.")
-
-        except Exception as e:
-            logger.critical(f"Failed to start or run webhook server: {e}", exc_info=True)
-            if application and hasattr(application, 'stop') and getattr(application, '_is_running', False):
-                logger.info("Stopping application due to error in webhook operation.")
-                await application.stop()
-            return # Exit run_bot
-        finally:
-            # This finally block ensures cleanup even if shutdown_event.wait() is interrupted
-            # or if run_webhook exits unexpectedly after starting.
-            if application and hasattr(application, 'stop') and getattr(application, '_is_running', False):
-                logger.info("Ensuring application is stopped in webhook mode's finally block.")
-                await application.stop()
-
-    else: # Polling mode
-        logger.info("Starting bot in POLLING mode...")
-        # application.run_polling() calls initialize, start, and handles its own stop on signals.
-        await application.run_polling(
-            allowed_updates=[Update.MESSAGE, Update.CALLBACK_QUERY],
-            drop_pending_updates=True,
-            # Default stop_signals are [SIGINT, SIGTERM, SIGABRT]
+    # --- Set Webhook with Telegram ---
+    # It's crucial this happens AFTER application.initialize() and BEFORE aiohttp starts
+    try:
+        logger.info(f"Attempting to set webhook with Telegram: {FULL_TELEGRAM_WEBHOOK_URL}")
+        # Ensure allowed_updates covers all types your handlers might need
+        await application.bot.set_webhook(
+            url=FULL_TELEGRAM_WEBHOOK_URL,
+            allowed_updates=[Update.MESSAGE, Update.CALLBACK_QUERY] # Example
         )
-    logger.info("Bot's main run function has exited.")
+        webhook_info = await application.bot.get_webhook_info()
+        if webhook_info.url == FULL_TELEGRAM_WEBHOOK_URL:
+            logger.info(f"Webhook successfully set/confirmed with Telegram: {webhook_info.url}")
+        else:
+            logger.error(f"Webhook URL mismatch after setting! Expected: {FULL_TELEGRAM_WEBHOOK_URL}, Got: {webhook_info.url if webhook_info else 'None'}. Check base URL and path.")
+            # Consider if this should be fatal; depends on deployment. Logging error and continuing.
+    except Exception as e:
+        logger.critical(f"CRITICAL: Failed to set webhook with Telegram: {e}", exc_info=True)
+        shutdown_event.set() # Signal shutdown
+        return
 
+    # --- Setup and Run Manual aiohttp Server ---
+    # ❌ REMOVED: await application.run_webhook(...)
+    # ✅ ADDED: Manual aiohttp setup starts here
+    aiohttp_app = web.Application()
+    # The router path *must* match FINAL_WEBHOOK_PATH used in FULL_TELEGRAM_WEBHOOK_URL
+    aiohttp_app.router.add_post(FINAL_WEBHOOK_PATH, telegram_webhook_handler)
+    logger.info(f"aiohttp router configured for POST requests on path: {FINAL_WEBHOOK_PATH}")
 
-# --- Script Entry Point ---
-if __name__ == "__main__":
-    # import sys # Already imported at the top
-
-    logger.info("Z1-Gray Main Application Bootstrapping Sequence Initiated...")
+    runner = web.AppRunner(aiohttp_app)
+    await runner.setup()
+    # Listen on 0.0.0.0 for external connections (like Render's proxy)
+    site = web.TCPSite(runner, host="0.0.0.0", port=PORT)
 
     try:
-        # ✅ REPLACED: asyncio.run(run_bot())
-        # ✅ WITH: loop.run_until_complete() for environments like Render
-        loop = asyncio.get_event_loop() # Get or create event loop
-        # Note: If using Python 3.10+, asyncio.get_event_loop() might behave differently
-        # if no loop is set. asyncio.new_event_loop() and asyncio.set_event_loop()
-        # might be more explicit if needed, but get_event_loop() usually works.
-        loop.run_until_complete(run_bot())
-    except KeyboardInterrupt:
-        logger.info("Process terminated by KeyboardInterrupt at top level.")
-        # The signal handler should manage graceful shutdown.
-        # If shutdown_event was used (webhook mode), it should already be set.
-    except RuntimeError as e:
-        if "Invalid BOT_TOKEN" in str(e):
-            logger.debug(f"Main caught RuntimeError (BOT_TOKEN issue already logged): {e}")
-        # The "Cannot close a running event loop" error should ideally be avoided by this structure.
-        elif "Event loop is closed" in str(e): #  or "Cannot close a running event loop" in str(e):
-            logger.warning(f"Known RuntimeError during shutdown sequence (event loop closed): {e}")
-        else:
-            logger.critical(f"UNHANDLED RUNTIME EXCEPTION in main: {e}", exc_info=True)
-            sys.exit(1) # Exit with error code
+        await site.start() # Start the aiohttp server
+        logger.info(f"✅ Webhook server (aiohttp) started successfully on 0.0.0.0:{PORT}")
+        logger.info(f"Telegram should send updates to: {FULL_TELEGRAM_WEBHOOK_URL}")
+
+        # Keep the application running until shutdown signal
+        await shutdown_event.wait()
+        logger.info("🔻 Shutdown signal received via event. Cleaning up...")
+
     except Exception as e:
-        logger.critical(f"UNHANDLED EXCEPTION in main: {e}", exc_info=True)
-        sys.exit(1) # Exit with error code
+        logger.critical(f"Error during aiohttp server execution: {e}", exc_info=True)
     finally:
-        logger.info("Z1-Gray Main Application execution cycle concluded.")
+        # --- Cleanup aiohttp server ---
+        logger.info("Stopping aiohttp web server...")
+        await site.stop()
+        logger.info("aiohttp site stopped.")
+        await runner.cleanup()
+        logger.info("aiohttp runner cleaned up.")
+        # PTB Application cleanup is handled in the main script's finally block
+
+# === Program Entry Point ===
+if __name__ == "__main__":
+    # Register signal handlers
+    try:
+        signal.signal(signal.SIGINT, handle_signal_sync)
+        signal.signal(signal.SIGTERM, handle_signal_sync)
+    except ValueError:
+        logger.warning("Could not set all OS signal handlers (may be on Windows).")
+    except Exception as e:
+        logger.error(f"Error setting OS signal handlers: {e}", exc_info=True)
+
+    logger.info("Starting main asyncio event loop...")
+    try:
+        asyncio.run(run_bot()) # Use standard asyncio runner
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Process terminated by KeyboardInterrupt/SystemExit at top level.")
+        # asyncio.run handles task cancellation. Signal handler sets shutdown_event.
+    except RuntimeError as e:
+        # Handle specific RuntimeErrors if needed
+        if "Invalid BOT_TOKEN" in str(e):
+            logger.debug("Top level caught known BOT_TOKEN RuntimeError.")
+        elif "Event loop is closed" in str(e) or "cannot schedule" in str(e):
+             logger.warning(f"Known asyncio RuntimeError during shutdown: {e}")
+        else:
+             logger.critical(f"Unhandled RuntimeError at top level: {e}", exc_info=True)
+             sys.exit(1)
+    except Exception as e:
+        logger.critical(f"FATAL UNHANDLED EXCEPTION at top level: {e}", exc_info=True)
+        sys.exit(1)
+    finally:
+        # Final cleanup attempt for PTB Application
+        if application:
+            logger.info("Performing final PTB Application cleanup...")
+            # This runs after asyncio.run completes. Running async cleanup is best-effort.
+            if hasattr(application, 'shutdown') and getattr(application, '_initialized', False):
+                try:
+                    # Try to run shutdown with a new temporary loop if main one is closed
+                    asyncio.run(application.shutdown())
+                    logger.info("PTB Application shutdown completed in final cleanup.")
+                except RuntimeError as e: # Handle cases where loop is closed/can't run
+                     logger.warning(f"Could not run async PTB shutdown in final cleanup (loop state: {e}). Resources might not be fully released.")
+                except Exception as e:
+                     logger.error(f"Error during final PTB application shutdown: {e}", exc_info=True)
+            else:
+                 logger.info("PTB Application was not initialized or doesn't need shutdown.")
+        logger.info("Script execution finished.")
