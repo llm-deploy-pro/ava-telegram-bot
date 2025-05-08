@@ -299,47 +299,44 @@ async def run_bot():
              logger.critical("CRITICAL: Webhook path not set, cannot start in webhook mode.")
              return
 
-        # Fixed webhook startup section - using PTB v20 style
+        # --- Start Webhook Server (PTB v20 official method) ---
         try:
             logger.info(f"Starting webhook server, listening at 0.0.0.0:{PORT}, path: {FINAL_WEBHOOK_PATH}")
-            
-            # Key fix here - using the correct async approach with v20 Application
-            await application.initialize()  # Initialize app (will call post_init hook)
-            await application.start()  # Start the application (necessary preparation)
-            
-            # Proper webhook setup
+
+            await application.initialize() # Initialize app (will call post_init hook, which also sets webhook)
+            await application.start()      # Start the application (necessary preparation)
+
+            # Set webhook with Telegram (this might be redundant if post_init succeeded, but ensures it's set before run_webhook)
+            # This matches the structure you provided for the replacement.
             await application.bot.set_webhook(
                 url=f"{WEBHOOK_URL.rstrip('/')}{FINAL_WEBHOOK_PATH}",
                 allowed_updates=[Update.MESSAGE, Update.CALLBACK_QUERY],
                 drop_pending_updates=True
             )
-            
-            # Use WebhookServer for v20
-            from telegram.ext._utils.webhookhandler import WebhookServer
-            webhook_server = WebhookServer(
+
+            await application.run_webhook(
                 listen="0.0.0.0",
-                port=PORT, 
-                url_path=FINAL_WEBHOOK_PATH,
-                webhook_app=application.webhook_app
+                port=PORT,
+                webhook_path=FINAL_WEBHOOK_PATH, # Note: PTB uses webhook_path, not url_path for application.run_webhook
+                allowed_updates=[Update.MESSAGE, Update.CALLBACK_QUERY],
+                stop_signals=None  # handled manually by shutdown_event
             )
-            
-            # Start the web server
-            await webhook_server.serve_forever()
-            
-            logger.info(f"Webhook server successfully started, listening at 0.0.0.0:{PORT} on path {FINAL_WEBHOOK_PATH}")
-            await shutdown_event.wait()  # Wait for shutdown signal
-            
+
+            await shutdown_event.wait() # Wait for graceful shutdown signal
+
         except Exception as e:
             logger.critical(f"Failed to start webhook server: {e}", exc_info=True)
-            return
+            return         # main.py
 
     else: # Polling mode
         logger.info("Starting bot in POLLING mode...")
         allowed_updates = [Update.MESSAGE, Update.CALLBACK_QUERY]
+        # For polling, application.initialize() and application.start() are called internally by run_polling.
+        # The post_init hook will still be called.
         await application.run_polling(
             allowed_updates=allowed_updates,
             drop_pending_updates=True,
-            stop_signals=[signal.SIGINT, signal.SIGTERM]
+            stop_signals=[signal.SIGINT, signal.SIGTERM] # PTB handles these signals for polling
         )
 
     logger.info("Bot's main run function has exited.")
