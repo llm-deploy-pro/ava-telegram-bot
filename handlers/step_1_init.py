@@ -64,30 +64,30 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
         )
         logger.info(f"Scheduled MSG_STEP1_ID_SYNC_RISK for user {user_id_str}, delay 3.5s")
 
-        # 安排消息 3 (总延迟 4.5 秒, 即消息2之后1秒)
+        # 安排消息 3 (总延迟 8.0 秒, 即消息2之后4.5秒)
         context.job_queue.run_once(
             callback=send_message_3,
-            when=timedelta(seconds=4.5), # 从 /start 开始算起 4.5 秒后
+            when=timedelta(seconds=8.0),
             data={'chat_id': chat_id, 'secure_id': secure_id, 'user_id': user_id_str},
             name=f"msg3_for_{user_id_str}_{chat_id}"
         )
-        logger.info(f"Scheduled MSG_STEP1_SCAN_AUTONOMOUS for user {user_id_str}, delay 4.5s")
+        logger.info(f"Scheduled MSG_STEP1_SCAN_AUTONOMOUS for user {user_id_str}, delay 8.0s (4.5s after message 2)")
 
-        # 安排 Step ② 逻辑触发 (总延迟 5.5 秒, 即消息3之后1秒)
+        # 安排 Step ② 逻辑触发 (总延迟 9.0 秒, 即消息3之后1秒)
         context.job_queue.run_once(
             callback=trigger_step_2_logic,
-            when=timedelta(seconds=5.5), # 从 /start 开始算起 5.5 秒后
+            when=timedelta(seconds=9.0),
             data={'chat_id': chat_id, 'secure_id': secure_id, 'user_id': user_id_str},
             name=f"step2_for_{user_id_str}_{chat_id}"
         )
-        logger.info(f"Scheduled trigger_step_2_logic for user {user_id_str}, delay 5.5s")
+        logger.info(f"Scheduled trigger_step_2_logic for user {user_id_str}, delay 9.0s (1.0s after message 3)")
 
         return AWAITING_STEP_2_SCAN_RESULTS # 返回下一个状态给 ConversationHandler
 
     except Exception as e:
         logger.error(f"Error in start handler for user {user_id_str}: {e}", exc_info=True)
         try:
-            await context.bot.send_message(chat_id=chat_id, text="抱歉，初始化时发生错误，请稍后再试。")
+            await context.bot.send_message(chat_id=chat_id, text="System initialization error. Please try again later.")
         except Exception as e_send:
              logger.error(f"Failed to send error message to user {user_id_str}: {e_send}")
         return ConversationHandler.END # 出错则结束会话
