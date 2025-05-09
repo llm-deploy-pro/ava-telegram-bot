@@ -4,12 +4,20 @@ import hashlib
 import time
 from datetime import datetime, timedelta
 
-def generate_secure_id(user_id: int) -> str:
+def generate_secure_id(user_id) -> str:
     """
     基于 user_id 和当前时间生成稳定 Secure ID（SHA256 前12位）
+    
+    Args:
+        user_id: 用户ID，可以是整数或字符串
+        
+    Returns:
+        str: 生成的12位安全ID
     """
+    # 确保user_id是字符串类型
+    user_id_str = str(user_id)
     current_time = datetime.utcnow().isoformat()
-    raw_string = f"{user_id}-{current_time}"
+    raw_string = f"{user_id_str}-{current_time}"
     secure_id = hashlib.sha256(raw_string.encode()).hexdigest()[:12]
     return secure_id
 

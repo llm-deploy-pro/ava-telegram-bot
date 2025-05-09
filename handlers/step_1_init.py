@@ -12,7 +12,7 @@ from utils.state_definitions import AWAITING_STEP_2_SCAN_RESULTS
 # 确保所有在 message_templates.py 中的其他模板也做了必要的静态文本转义。
 MSG_STEP1_AUTH_CONFIRMED = (
     "🔷 \\[Z1\\-CORE\\_PROTOCOL\\_7\\] ACCESS GRANTED\n"
-    "🔹 Primary Node: @AccessNodeIO_bot\n" # 通常 @Username 不需要转义，但转义了也不会错
+    "🔹 Primary Node: @AccessNodeIO\\_bot\n" # 通常 @Username 不需要转义，但转义了也不会错
     "🔹 SECURE\\_ENCRYPTION\\_LAYER: ESTABLISHED"
 )
 
