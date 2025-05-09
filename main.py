@@ -1,6 +1,7 @@
 import asyncio
 import os
 import signal
+import traceback
 from datetime import timedelta # 用于 JobQueue 示例
 
 from telegram import Update
@@ -35,16 +36,16 @@ BOT_TOKEN = os.getenv('BOT_TOKEN')
 # 是否使用 polling 模式 (本地开发通常使用 polling)
 USE_POLLING = os.getenv('USE_POLLING', 'false').lower() == 'true'
 WEBHOOK_URL = os.getenv('WEBHOOK_URL') # Render 会提供这个 URL
-WEBHOOK_PATH_ENV = os.getenv('WEBHOOK_PATH') # 例如 "/your_secret_webhook_path"
+WEBHOOK_PATH = os.getenv('WEBHOOK_PATH', '/webhook')
 PORT = int(os.getenv('PORT', '10000')) # Render 通常使用 10000，本地测试可以是 8080, 8443 等
 PERSISTENCE_FILEPATH = os.getenv('PERSISTENCE_PATH', 'bot_data.pkl')
 ADMIN_CHAT_ID = os.getenv('ADMIN_CHAT_ID') # 可选，用于发送重要通知
 
 # --- Webhook 路径配置 ---
-if WEBHOOK_PATH_ENV and WEBHOOK_PATH_ENV.startswith('/'):
-    WEBHOOK_PATH = WEBHOOK_PATH_ENV
-elif WEBHOOK_PATH_ENV:
-    WEBHOOK_PATH = f"/{WEBHOOK_PATH_ENV}"
+if WEBHOOK_PATH and WEBHOOK_PATH.startswith('/'):
+    WEBHOOK_PATH = WEBHOOK_PATH
+elif WEBHOOK_PATH:
+    WEBHOOK_PATH = f"/{WEBHOOK_PATH}"
 else:
     # 强烈建议在 .env 或 Render 环境变量中明确设置 WEBHOOK_PATH
     # 避免使用基于 BOT_TOKEN 的路径，因为它可能在日志中暴露部分 Token
@@ -53,57 +54,55 @@ else:
 
 # --- 启动前检查 ---
 if not BOT_TOKEN:
-    logger.critical("FATAL: BOT_TOKEN not found in environment variables.")
+    logger.critical("错误: BOT_TOKEN 环境变量未设置")
     exit(1)
 if not USE_POLLING and not WEBHOOK_URL:
-    logger.critical("FATAL: WEBHOOK_URL not found. Required for Webhook mode.")
+    logger.critical("错误: 使用 webhook 模式时必须设置 WEBHOOK_URL 环境变量")
     exit(1)
 
-logger.info(f"BOT_TOKEN loaded, ends with: ...{BOT_TOKEN[-4:]}")
-if USE_POLLING:
-    logger.info("Running in POLLING mode (for local development)")
-else:
-    logger.info(f"Running in WEBHOOK mode with URL: {WEBHOOK_URL}")
-    logger.info(f"Webhook path to be used: {WEBHOOK_PATH}")
-    logger.info(f"Application will listen on PORT: {PORT}")
-logger.info(f"Persistence filepath: {PERSISTENCE_FILEPATH}")
+logger.info(f"BOT_TOKEN 已加载，结尾为: ...{BOT_TOKEN[-4:]}")
+logger.info(f"运行模式: {'轮询模式 (polling)' if USE_POLLING else '网络钩子模式 (webhook)'}")
+if not USE_POLLING:
+    logger.info(f"Webhook URL: {WEBHOOK_URL}")
+    logger.info(f"Webhook 路径: {WEBHOOK_PATH}")
+    logger.info(f"监听端口: {PORT}")
+logger.info(f"持久化文件路径: {PERSISTENCE_FILEPATH}")
 if ADMIN_CHAT_ID:
     logger.info(f"Admin chat ID for notifications: {ADMIN_CHAT_ID}")
 
 
 # --- 通用 Handler 函数 (如果您的 ConversationHandler 没有覆盖这些) ---
-async def global_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Global cancel command if not part of a conversation or as a final fallback."""
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """取消当前操作并重置会话"""
     user = update.effective_user
-    logger.info(f"User {user.id if user else 'Unknown'} triggered global /cancel.")
+    logger.info(f"用户 {user.id if user else '未知'} 触发了 /cancel 命令")
+    
     if update.message:
         await update.message.reply_text(
-            "Operation cancelled. Your session (if any) has been reset.\n"
-            "Send /start to begin a new session."
+            "操作已取消。您的会话已重置。\n发送 /start 开始新的会话。"
         )
-    # 对于全局 cancel，很难知道它是否应该结束一个 ConversationHandler
-    # 通常 ConversationHandler 内部的 cancel 是最佳实践
-    return ConversationHandler.END # 假设这是被用作 ConversationHandler 的 fallback
+    
+    return ConversationHandler.END
 
-async def unknown_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handles unknown commands not caught by other handlers."""
+async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """处理未知命令"""
     if update.message:
-        logger.warning(f"Unknown command received: {update.message.text} from user {update.effective_user.id if update.effective_user else 'Unknown'}")
-        await update.message.reply_text("Sorry, I didn't understand that command. Please use /start or other available commands.")
+        logger.warning(f"收到未知命令: {update.message.text} 来自用户 {update.effective_user.id if update.effective_user else '未知'}")
+        await update.message.reply_text("抱歉，我不理解这个命令。请使用 /start 或其他可用命令。")
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Log Errors caused by Updates and send a user-friendly message."""
-    logger.error(f"Exception while handling an update: {context.error}", exc_info=context.error)
-
-    # Optionally, send a message to the user
+    """处理更新过程中的错误"""
+    logger.error(f"处理更新时发生异常: {context.error}", exc_info=context.error)
+    
+    # 可选：向用户发送消息
     if isinstance(update, Update) and update.effective_chat:
         try:
             await context.bot.send_message(
                 chat_id=update.effective_chat.id,
-                text="Sorry, an unexpected error occurred on our side. Please try again in a moment."
+                text="抱歉，系统出现了意外错误。请稍后再试。"
             )
         except Exception as e:
-            logger.error(f"Failed to send error message to user {update.effective_chat.id}: {e}")
+            logger.error(f"向用户 {update.effective_chat.id} 发送错误消息失败: {e}")
 
     # Optionally, send a detailed error to the admin
     if ADMIN_CHAT_ID:
@@ -115,30 +114,31 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 
 # --- Webhook 设置回调 (post_init) ---
 async def post_init_webhook_setup(application: Application) -> None:
-    """Sets the webhook after the application has been initialized."""
+    """在应用程序初始化后设置 webhook"""
     if USE_POLLING:
-        # 在 polling 模式下，确保删除任何现有的 webhook
-        logger.info("Polling mode active: removing any existing webhook...")
+        # 在轮询模式下，移除现有的 webhook
+        logger.info("轮询模式启用：移除所有现有的 webhook")
         try:
             await application.bot.delete_webhook(drop_pending_updates=True)
-            logger.info("Webhook removed successfully for polling mode.")
+            logger.info("已成功移除 webhook 以使用轮询模式")
         except Exception as e:
-            logger.error(f"Error removing webhook for polling: {e}")
+            logger.error(f"移除 webhook 失败: {e}")
         return
 
     # webhook 模式设置
     full_webhook_url = f"{WEBHOOK_URL.rstrip('/')}{WEBHOOK_PATH}"
-    logger.info(f"Attempting to set webhook to: {full_webhook_url}")
+    logger.info(f"正在设置 webhook 到: {full_webhook_url}")
+    
     try:
         await application.bot.set_webhook(
             url=full_webhook_url,
-            allowed_updates=Update.ALL_TYPES, # Or specify: [Update.MESSAGE, Update.CALLBACK_QUERY, etc.]
-            drop_pending_updates=True,
-            secret_token=BOT_TOKEN[:16] # 可选：增加一层安全性，需要您在启动 webhook 时也提供
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True
         )
+        
         webhook_info = await application.bot.get_webhook_info()
         if webhook_info.url == full_webhook_url:
-            logger.info(f"Webhook successfully set to: {webhook_info.url}")
+            logger.info(f"Webhook 设置成功: {webhook_info.url}")
             if ADMIN_CHAT_ID:
                  await application.bot.send_message(ADMIN_CHAT_ID, f"✅ Z1-Gray Bot (Webhook) is online!\nURL: {webhook_info.url}")
         else:
@@ -163,21 +163,20 @@ async def post_init_webhook_setup(application: Application) -> None:
         # Consider a more robust notification or fallback if webhook setup fails critically
 
 # --- 优雅停机处理 ---
-def graceful_signal_handler(signum, frame):
-    logger.info(f"Signal {signal.Signals(signum).name} received. Initiating graceful shutdown...")
+def signal_handler(signum, frame):
+    logger.info(f"收到信号 {signal.Signals(signum).name}。正在初始化优雅关闭...")
     shutdown_event.set()
 
 async def main() -> None:
-    """Run the bot."""
-    mode_text = "Polling Mode" if USE_POLLING else "Webhook Mode"
-    logger.info(f"Starting Z1-Gray Bot ({mode_text})...")
+    """运行 Bot"""
+    logger.info(f"正在启动 Z1-Gray Bot ({('轮询模式' if USE_POLLING else 'Webhook 模式')})...")
 
     # 设置持久化
     try:
         # Render.com 默认情况下文件系统是短暂的，除非配置了持久磁盘。
         # 如果没有持久磁盘，PicklePersistence 的数据会在重启/重新部署后丢失。
         persistence = PicklePersistence(filepath=PERSISTENCE_FILEPATH)
-        logger.info(f"PicklePersistence will use file: {PERSISTENCE_FILEPATH}")
+        logger.info(f"PicklePersistence 将使用文件: {PERSISTENCE_FILEPATH}")
     except Exception as e:
         logger.error(f"Failed to initialize PicklePersistence: {e}. Persistence will be disabled.", exc_info=True)
         persistence = None
@@ -196,24 +195,24 @@ async def main() -> None:
     # 确保 `start_handler` 是您项目中实际的、配置好的 ConversationHandler 实例
     if 'start_handler' in globals() and isinstance(start_handler, CommandHandler):
         application.add_handler(start_handler)
-        logger.info("Main conversation handler (start_handler) added.")
+        logger.info("已添加主会话处理程序 (start_handler)")
     else:
         # 如果 start_handler 未正确导入或不是 ConversationHandler，Bot 的核心逻辑会缺失
-        logger.error("CRITICAL: `start_handler` is not a valid handler or not imported. Bot may not function as expected.")
+        logger.error("错误: start_handler 不是有效的处理程序或未正确导入")
         # 作为备用，可以添加一个简单的 /start
         async def basic_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-            await update.message.reply_text("Basic start. Conversation flow not loaded.")
+            await update.message.reply_text("基础启动。对话流程未加载。")
         application.add_handler(CommandHandler("start", basic_start))
-        logger.info("Fallback basic /start handler added.")
+        logger.info("已添加备用基础 /start 处理程序")
 
     # --- 注册其他全局 Handlers (如果需要且未被 ConversationHandler 覆盖) ---
     # 全局 /cancel 通常应由 ConversationHandler 的 fallbacks 处理
-    application.add_handler(CommandHandler("cancel", global_cancel))
-    logger.info("Global /cancel handler added.")
+    application.add_handler(CommandHandler("cancel", cancel))
+    logger.info("已添加全局 /cancel 处理程序")
 
     # 处理所有其他未匹配的命令
-    application.add_handler(MessageHandler(filters.COMMAND, unknown_command_handler))
-    logger.info("Unknown command handler added.")
+    application.add_handler(MessageHandler(filters.COMMAND, unknown_command))
+    logger.info("已添加未知命令处理程序")
 
     # --- 初始化和启动应用组件 ---
     try:
@@ -223,32 +222,24 @@ async def main() -> None:
 
         # 根据模式启动 polling 或 webhook
         if USE_POLLING:
-            logger.info("Using polling mode for local development")
-            try:
-                # 使用明确的 drop_pending_updates 和 allowed_updates 参数
-                await application.updater.start_polling(drop_pending_updates=True)
-                logger.info("Bot started polling successfully. Press Ctrl+C to stop.")
-            except Exception as e:
-                logger.error(f"Error starting polling: {e}", exc_info=True)
-                await application.stop()
-                await application.shutdown()
-                return
+            logger.info("使用轮询模式进行本地开发")
+            await application.updater.start_polling(drop_pending_updates=True)
+            logger.info("Bot 已成功开始轮询。按 Ctrl+C 停止。")
         else:
             # --- 启动内置 Webhook 服务器 ---
             # url_path 传递给 start_webhook 时不应包含前导 '/'
             clean_webhook_path = WEBHOOK_PATH.lstrip('/')
-            logger.info(f"Starting local webhook HTTP server to listen on 0.0.0.0:{PORT} for path '/{clean_webhook_path}'")
+            logger.info(f"正在启动本地 webhook HTTP 服务器，监听 0.0.0.0:{PORT} 路径 '/{clean_webhook_path}'")
             
             await application.updater.start_webhook(
                 listen="0.0.0.0",
                 port=PORT,
-                url_path=clean_webhook_path,
-                # secret_token=BOT_TOKEN[:16] # 如果在 set_webhook 中使用了 secret_token，这里也要匹配
+                url_path=clean_webhook_path
             )
-            logger.info(f"Webhook HTTP server started. Bot should be ready to receive updates at {WEBHOOK_URL.rstrip('/')}{WEBHOOK_PATH}")
+            logger.info(f"Webhook HTTP 服务器已启动。Bot 应该可以在 {WEBHOOK_URL.rstrip('/')}{WEBHOOK_PATH} 接收更新")
 
     except Exception as e:
-        logger.critical(f"CRITICAL error during application startup: {e}", exc_info=True)
+        logger.critical(f"启动应用程序时发生严重错误: {e}", exc_info=True)
         if ADMIN_CHAT_ID:
             try:
                 await application.bot.send_message(ADMIN_CHAT_ID, f"🚨 Z1-Gray Bot CRITICAL STARTUP FAILURE: {e}")
@@ -263,39 +254,37 @@ async def main() -> None:
     await shutdown_event.wait()
 
     # --- 优雅停机 ---
-    logger.info("Shutting down bot gracefully...")
+    logger.info("正在优雅关闭 Bot...")
     try:
-        if application.updater and application.updater.running: # 检查 updater 是否存在且在运行
+        if application.updater and hasattr(application.updater, 'running') and application.updater.running: # 检查 updater 是否存在且在运行
             await application.updater.stop() # 停止 webhook 服务器或 polling
         await application.stop()         # 停止 JobQueue 等
         await application.shutdown()     # 清理 PTB 资源
     except Exception as e:
-        logger.error(f"Error during bot shutdown: {e}", exc_info=True)
+        logger.error(f"Bot 关闭过程中发生错误: {e}", exc_info=True)
     finally:
-        logger.info("Bot shutdown sequence complete.")
+        logger.info("Bot 关闭序列完成")
 
 
 if __name__ == '__main__':
     # 设置信号处理器
     try:
-        signal.signal(signal.SIGINT, graceful_signal_handler)
-        signal.signal(signal.SIGTERM, graceful_signal_handler)
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
     except ValueError:
-        logger.warning("Could not set signal handlers. Graceful shutdown via signals might not work.")
+        logger.warning("无法设置信号处理器。通过信号进行优雅关闭可能无法工作。")
 
-    print("Starting bot...")
+    print("正在启动 Bot...")
     try:
-        print("Running main function...")
+        print("运行主函数...")
         asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):
-        print("Process terminated by user or system.")
-        logger.info("Process terminated by user or system.")
+        print("进程被用户或系统终止")
+        logger.info("进程被用户或系统终止")
     except Exception as e:
-        import traceback
-        print(f"Unhandled exception: {e}")
-        print(f"Traceback: {traceback.format_exc()}")
-        error_traceback = traceback.format_exc()
-        logger.critical(f"Unhandled exception in main asyncio loop: {e}")
-        logger.critical(f"Error traceback: {error_traceback}")
+        print(f"未处理的异常: {e}")
+        print(f"追踪信息: {traceback.format_exc()}")
+        logger.critical(f"主异步循环中未处理的异常: {e}")
+        logger.critical(f"错误追踪信息: {traceback.format_exc()}")
     finally:
-        logger.info("Application exiting.")
+        logger.info("应用程序退出")
