@@ -249,3 +249,22 @@ AttributeError: 'ApplicationBuilder' object has no attribute 'drop_pending_updat
 2025-05-09 15:25:53.043 | INFO     | __main__:main:215 - 已添加未知命令处理程序
 2025-05-09 15:25:54.754 | INFO     | __main__:main:225 - 使用轮询模式进行本地开发
 2025-05-09 15:25:55.126 | INFO     | __main__:main:227 - Bot 已成功开始轮询。按 Ctrl+C 停止。
+2025-05-09 15:29:41.285 | INFO     | __main__:signal_handler:167 - 收到信号 SIGINT。正在初始化优雅关闭...
+2025-05-09 15:29:41.286 | INFO     | __main__:main:257 - 正在优雅关闭 Bot...
+2025-05-09 15:29:47.663 | INFO     | __main__:main:266 - Bot 关闭序列完成
+2025-05-09 15:29:47.664 | INFO     | __main__:<module>:290 - 应用程序退出
+2025-05-09 15:33:02.204 | INFO     | __main__:<module>:66 - BOT_TOKEN 已加载，结尾为: ...0qIo
+2025-05-09 15:33:02.204 | INFO     | __main__:<module>:67 - 检测到环境: 本地开发
+2025-05-09 15:33:02.205 | INFO     | __main__:<module>:68 - 运行模式: 网络钩子模式 (webhook)
+2025-05-09 15:33:02.205 | INFO     | __main__:<module>:70 - Webhook URL: https://ava-telegram-bot-1.onrender.com
+2025-05-09 15:33:02.205 | INFO     | __main__:<module>:71 - Webhook 路径: /webhook
+2025-05-09 15:33:02.205 | INFO     | __main__:<module>:72 - 监听端口: 10000
+2025-05-09 15:33:02.205 | INFO     | __main__:<module>:73 - 持久化文件路径: bot_data.pkl
+2025-05-09 15:33:02.208 | INFO     | __main__:main:178 - 正在启动 Z1-Gray Bot (Webhook 模式)...
+2025-05-09 15:33:02.209 | INFO     | __main__:main:185 - PicklePersistence 将使用文件: bot_data.pkl
+2025-05-09 15:33:02.926 | INFO     | __main__:main:204 - 已添加主会话处理程序 (start_handler)
+2025-05-09 15:33:02.927 | INFO     | __main__:main:217 - 已添加全局 /cancel 处理程序
+2025-05-09 15:33:02.927 | INFO     | __main__:main:221 - 已添加未知命令处理程序
+2025-05-09 15:33:05.479 | INFO     | __main__:main:238 - 正在启动本地 webhook HTTP 服务器，监听 0.0.0.0:10000 路径 '/webhook'
+2025-05-09 15:33:06.331 | INFO     | __main__:main:248 - Webhook HTTP 服务器已启动。Bot 应该可以在 https://ava-telegram-bot-1.onrender.com/webhook 接收更新
+2025-05-09 15:33:06.332 | INFO     | __main__:main:251 - Bot 正在监听端口: 10000，请确保此端口已正确暴露

@@ -2,7 +2,8 @@ import asyncio
 import os
 import signal
 import traceback
-from datetime import timedelta # 用于 JobQueue 示例
+from datetime import timedelta
+import platform
 
 from telegram import Update
 from telegram.ext import (
@@ -13,7 +14,7 @@ from telegram.ext import (
     PicklePersistence,
     MessageHandler,
     filters,
-    ConversationHandler # 导入 ConversationHandler
+    ConversationHandler
 )
 from dotenv import load_dotenv
 
@@ -33,11 +34,13 @@ shutdown_event = asyncio.Event()
 load_dotenv()
 
 BOT_TOKEN = os.getenv('BOT_TOKEN')
-# 是否使用 polling 模式 (本地开发通常使用 polling)
-USE_POLLING = os.getenv('USE_POLLING', 'false').lower() == 'true'
-WEBHOOK_URL = os.getenv('WEBHOOK_URL') # Render 会提供这个 URL
+# 环境检测：在Render.com上强制使用webhook模式
+IS_RENDER = "RENDER" in os.environ
+# 只有在非Render环境下才使用USE_POLLING配置
+USE_POLLING = False if IS_RENDER else os.getenv('USE_POLLING', 'false').lower() == 'true'
+WEBHOOK_URL = os.getenv('WEBHOOK_URL')
 WEBHOOK_PATH = os.getenv('WEBHOOK_PATH', '/webhook')
-PORT = int(os.getenv('PORT', '10000')) # Render 通常使用 10000，本地测试可以是 8080, 8443 等
+PORT = int(os.getenv('PORT', '10000'))
 PERSISTENCE_FILEPATH = os.getenv('PERSISTENCE_PATH', 'bot_data.pkl')
 ADMIN_CHAT_ID = os.getenv('ADMIN_CHAT_ID') # 可选，用于发送重要通知
 
@@ -61,6 +64,7 @@ if not USE_POLLING and not WEBHOOK_URL:
     exit(1)
 
 logger.info(f"BOT_TOKEN 已加载，结尾为: ...{BOT_TOKEN[-4:]}")
+logger.info(f"检测到环境: {'Render.com' if IS_RENDER else '本地开发'}")
 logger.info(f"运行模式: {'轮询模式 (polling)' if USE_POLLING else '网络钩子模式 (webhook)'}")
 if not USE_POLLING:
     logger.info(f"Webhook URL: {WEBHOOK_URL}")
@@ -116,7 +120,7 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 async def post_init_webhook_setup(application: Application) -> None:
     """在应用程序初始化后设置 webhook"""
     if USE_POLLING:
-        # 在轮询模式下，移除现有的 webhook
+        # 在轮询模式下，确保删除任何现有的 webhook
         logger.info("轮询模式启用：移除所有现有的 webhook")
         try:
             await application.bot.delete_webhook(drop_pending_updates=True)
@@ -130,6 +134,8 @@ async def post_init_webhook_setup(application: Application) -> None:
     logger.info(f"正在设置 webhook 到: {full_webhook_url}")
     
     try:
+        # 设置webhook并强制删除所有待处理的更新
+        await application.bot.delete_webhook(drop_pending_updates=True)
         await application.bot.set_webhook(
             url=full_webhook_url,
             allowed_updates=Update.ALL_TYPES,
@@ -164,7 +170,7 @@ async def post_init_webhook_setup(application: Application) -> None:
 
 # --- 优雅停机处理 ---
 def signal_handler(signum, frame):
-    logger.info(f"收到信号 {signal.Signals(signum).name}。正在初始化优雅关闭...")
+    logger.info(f"收到信号 {signal.Signals(signum).name if hasattr(signal, 'Signals') else signum}。正在初始化优雅关闭...")
     shutdown_event.set()
 
 async def main() -> None:
@@ -231,12 +237,18 @@ async def main() -> None:
             clean_webhook_path = WEBHOOK_PATH.lstrip('/')
             logger.info(f"正在启动本地 webhook HTTP 服务器，监听 0.0.0.0:{PORT} 路径 '/{clean_webhook_path}'")
             
+            # 确保明确绑定到0.0.0.0和指定端口
             await application.updater.start_webhook(
                 listen="0.0.0.0",
                 port=PORT,
-                url_path=clean_webhook_path
+                url_path=clean_webhook_path,
+                drop_pending_updates=True,
+                webhook_url=f"{WEBHOOK_URL.rstrip('/')}/{clean_webhook_path}"
             )
             logger.info(f"Webhook HTTP 服务器已启动。Bot 应该可以在 {WEBHOOK_URL.rstrip('/')}{WEBHOOK_PATH} 接收更新")
+            
+            # 输出明确的端口监听信息，帮助 Render.com 检测端口
+            logger.info(f"Bot 正在监听端口: {PORT}，请确保此端口已正确暴露")
 
     except Exception as e:
         logger.critical(f"启动应用程序时发生严重错误: {e}", exc_info=True)
