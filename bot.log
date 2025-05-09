@@ -1,0 +1,214 @@
+2025-05-09 12:52:21.779 | INFO     | __main__:<module>:17 - BOT_TOKEN from .env ends with: 0qIo
+2025-05-09 12:52:21.781 | INFO     | __main__:<module>:18 - WEBHOOK_URL: https://ava-telegram-bot-2.onrender.com
+2025-05-09 12:57:12.581 | INFO     | __main__:<module>:16 - BOT_TOKEN from .env ends with: 0qIo
+2025-05-09 12:57:12.584 | INFO     | __main__:<module>:17 - WEBHOOK_URL: https://ava-telegram-bot-2.onrender.com
+2025-05-09 12:59:59.456 | INFO     | __main__:<module>:51 - BOT_TOKEN from .env ends with: ...0qIo
+2025-05-09 12:59:59.457 | INFO     | __main__:<module>:52 - Configured WEBHOOK_URL: https://ava-telegram-bot-2.onrender.com
+2025-05-09 12:59:59.457 | INFO     | __main__:<module>:53 - Configured WEBHOOK_PATH: /webhook
+2025-05-09 12:59:59.458 | INFO     | __main__:<module>:54 - Configured PORT: 10000
+2025-05-09 12:59:59.458 | INFO     | __main__:<module>:55 - Persistence filepath: bot_data.pkl
+2025-05-09 12:59:59.459 | INFO     | __main__:main:124 - PicklePersistence initialized with file: bot_data.pkl
+2025-05-09 13:00:00.054 | CRITICAL | __main__:<module>:225 - Unhandled exception in main asyncio loop: 'Updater' object has no attribute '_Updater__polling_cleanup_cb' and no __dict__ for setting new attributes
+2025-05-09 13:01:03.306 | INFO     | __main__:<module>:51 - BOT_TOKEN from .env ends with: ...0qIo
+2025-05-09 13:01:03.307 | INFO     | __main__:<module>:52 - Configured WEBHOOK_URL: https://ava-telegram-bot-2.onrender.com
+2025-05-09 13:01:03.307 | INFO     | __main__:<module>:53 - Configured WEBHOOK_PATH: /webhook
+2025-05-09 13:01:03.307 | INFO     | __main__:<module>:54 - Configured PORT: 10000
+2025-05-09 13:01:03.307 | INFO     | __main__:<module>:55 - Persistence filepath: bot_data.pkl
+2025-05-09 13:01:03.309 | INFO     | __main__:main:124 - PicklePersistence initialized with file: bot_data.pkl
+2025-05-09 13:01:03.880 | CRITICAL | __main__:<module>:225 - Unhandled exception in main asyncio loop: 'Updater' object has no attribute '_Updater__polling_cleanup_cb' and no __dict__ for setting new attributes
+2025-05-09 13:01:53.062 | INFO     | __main__:<module>:51 - BOT_TOKEN from .env ends with: ...0qIo
+2025-05-09 13:01:53.063 | INFO     | __main__:<module>:52 - Configured WEBHOOK_URL: https://ava-telegram-bot-2.onrender.com
+2025-05-09 13:01:53.063 | INFO     | __main__:<module>:53 - Configured WEBHOOK_PATH: /webhook
+2025-05-09 13:01:53.063 | INFO     | __main__:<module>:54 - Configured PORT: 10000
+2025-05-09 13:01:53.064 | INFO     | __main__:<module>:55 - Persistence filepath: bot_data.pkl
+2025-05-09 13:01:53.065 | INFO     | __main__:main:124 - PicklePersistence initialized with file: bot_data.pkl
+2025-05-09 13:01:53.721 | CRITICAL | __main__:<module>:225 - Unhandled exception in main asyncio loop: cannot create weak reference to 'Application' object
+2025-05-09 13:02:16.249 | INFO     | __main__:<module>:51 - BOT_TOKEN from .env ends with: ...0qIo
+2025-05-09 13:02:16.250 | INFO     | __main__:<module>:52 - Configured WEBHOOK_URL: https://ava-telegram-bot-2.onrender.com
+2025-05-09 13:02:16.250 | INFO     | __main__:<module>:53 - Configured WEBHOOK_PATH: /webhook
+2025-05-09 13:02:16.250 | INFO     | __main__:<module>:54 - Configured PORT: 10000
+2025-05-09 13:02:16.250 | INFO     | __main__:<module>:55 - Persistence filepath: bot_data.pkl
+2025-05-09 13:02:16.252 | INFO     | __main__:main:124 - PicklePersistence initialized with file: bot_data.pkl
+2025-05-09 13:02:16.906 | CRITICAL | __main__:<module>:227 - Unhandled exception in main asyncio loop: cannot create weak reference to 'Application' object
+2025-05-09 13:02:16.906 | CRITICAL | __main__:<module>:228 - Error traceback: Traceback (most recent call last):
+  File "C:\Users\asus\Desktop\tt\Z1_GRAY_BOT\main.py", line 221, in <module>
+    asyncio.run(main())
+    ~~~~~~~~~~~^^^^^^^^
+  File "C:\Users\asus\AppData\Local\Programs\Python\Python313\Lib\asyncio\runners.py", line 195, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "C:\Users\asus\AppData\Local\Programs\Python\Python313\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\asus\AppData\Local\Programs\Python\Python313\Lib\asyncio\base_events.py", line 725, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "C:\Users\asus\Desktop\tt\Z1_GRAY_BOT\main.py", line 134, in main
+    application = builder.build()
+  File "C:\Users\asus\AppData\Local\Programs\Python\Python313\Lib\site-packages\telegram\ext\_applicationbuilder.py", line 344, in build
+    job_queue.set_application(application)  # type: ignore[arg-type]
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "C:\Users\asus\AppData\Local\Programs\Python\Python313\Lib\site-packages\telegram\ext\_jobqueue.py", line 212, in set_application
+    self._application = weakref.ref(application)
+                        ~~~~~~~~~~~^^^^^^^^^^^^^
+TypeError: cannot create weak reference to 'Application' object
+
+2025-05-09 13:02:42.070 | CRITICAL | __main__:<module>:48 - Error: cannot create weak reference to 'Application' object
+2025-05-09 13:02:42.071 | CRITICAL | __main__:<module>:49 - Error traceback: Traceback (most recent call last):
+  File "C:\Users\asus\Desktop\tt\Z1_GRAY_BOT\test.py", line 42, in <module>
+    asyncio.run(main())
+    ~~~~~~~~~~~^^^^^^^^
+  File "C:\Users\asus\AppData\Local\Programs\Python\Python313\Lib\asyncio\runners.py", line 195, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "C:\Users\asus\AppData\Local\Programs\Python\Python313\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\asus\AppData\Local\Programs\Python\Python313\Lib\asyncio\base_events.py", line 725, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "C:\Users\asus\Desktop\tt\Z1_GRAY_BOT\test.py", line 19, in main
+    application = ApplicationBuilder().token(BOT_TOKEN).build()
+  File "C:\Users\asus\AppData\Local\Programs\Python\Python313\Lib\site-packages\telegram\ext\_applicationbuilder.py", line 344, in build
+    job_queue.set_application(application)  # type: ignore[arg-type]
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "C:\Users\asus\AppData\Local\Programs\Python\Python313\Lib\site-packages\telegram\ext\_jobqueue.py", line 212, in set_application
+    self._application = weakref.ref(application)
+                        ~~~~~~~~~~~^^^^^^^^^^^^^
+TypeError: cannot create weak reference to 'Application' object
+
+2025-05-09 13:03:49.955 | INFO     | __main__:<module>:51 - BOT_TOKEN from .env ends with: ...0qIo
+2025-05-09 13:03:49.956 | INFO     | __main__:<module>:52 - Configured WEBHOOK_URL: https://ava-telegram-bot-2.onrender.com
+2025-05-09 13:03:49.956 | INFO     | __main__:<module>:53 - Configured WEBHOOK_PATH: /webhook
+2025-05-09 13:03:49.956 | INFO     | __main__:<module>:54 - Configured PORT: 10000
+2025-05-09 13:03:49.956 | INFO     | __main__:<module>:55 - Persistence filepath: bot_data.pkl
+2025-05-09 13:03:49.958 | INFO     | __main__:main:124 - PicklePersistence initialized with file: bot_data.pkl
+2025-05-09 13:03:50.608 | INFO     | __main__:main:163 - Main conversation handler (start_handler) added.
+2025-05-09 13:03:50.608 | INFO     | __main__:main:180 - Unknown command handler added.
+2025-05-09 13:03:53.402 | INFO     | __main__:main:189 - Starting local webhook server on 0.0.0.0:10000 with path 'webhook'
+2025-05-09 13:03:53.821 | CRITICAL | __main__:main:199 - Failed to start webhook server: Bad webhook: an https url must be provided for webhook
+2025-05-09 13:07:24.913 | INFO     | __main__:<module>:53 - BOT_TOKEN from .env ends with: ...0qIo
+2025-05-09 13:07:24.914 | INFO     | __main__:<module>:54 - Configured WEBHOOK_URL: https://ava-telegram-bot-1.onrender.com
+2025-05-09 13:07:24.914 | INFO     | __main__:<module>:55 - Configured WEBHOOK_PATH: /webhook
+2025-05-09 13:07:24.915 | INFO     | __main__:<module>:56 - Configured PORT: 10000
+2025-05-09 13:07:24.915 | INFO     | __main__:<module>:57 - Persistence filepath: bot_data.pkl
+2025-05-09 13:07:24.917 | INFO     | __main__:main:126 - PicklePersistence initialized with file: bot_data.pkl
+2025-05-09 13:07:25.569 | CRITICAL | __main__:<module>:235 - Unhandled exception in main asyncio loop: 'Updater' object has no attribute '_Updater__polling_cleanup_cb' and no __dict__ for setting new attributes
+2025-05-09 13:07:25.570 | CRITICAL | __main__:<module>:236 - Error traceback: Traceback (most recent call last):
+  File "C:\Users\asus\Desktop\tt\Z1_GRAY_BOT\main.py", line 229, in <module>
+    asyncio.run(main())
+    ~~~~~~~~~~~^^^^^^^^
+  File "C:\Users\asus\AppData\Local\Programs\Python\Python313\Lib\asyncio\runners.py", line 195, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "C:\Users\asus\AppData\Local\Programs\Python\Python313\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\asus\AppData\Local\Programs\Python\Python313\Lib\asyncio\base_events.py", line 725, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "C:\Users\asus\Desktop\tt\Z1_GRAY_BOT\main.py", line 136, in main
+    application = builder.build()
+  File "C:\Users\asus\AppData\Local\Programs\Python\Python313\Lib\site-packages\telegram\ext\_applicationbuilder.py", line 312, in build
+    updater = Updater(bot=bot, update_queue=update_queue)
+  File "C:\Users\asus\AppData\Local\Programs\Python\Python313\Lib\site-packages\telegram\ext\_updater.py", line 128, in __init__
+    self.__polling_cleanup_cb: Optional[Callable[[], Coroutine[Any, Any, None]]] = None
+    ^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'Updater' object has no attribute '_Updater__polling_cleanup_cb' and no __dict__ for setting new attributes
+
+2025-05-09 13:08:49.939 | INFO     | __main__:<module>:53 - BOT_TOKEN from .env ends with: ...0qIo
+2025-05-09 13:08:49.940 | INFO     | __main__:<module>:54 - Configured WEBHOOK_URL: https://ava-telegram-bot-1.onrender.com
+2025-05-09 13:08:49.941 | INFO     | __main__:<module>:55 - Configured WEBHOOK_PATH: /webhook
+2025-05-09 13:08:49.941 | INFO     | __main__:<module>:56 - Configured PORT: 10000
+2025-05-09 13:08:49.941 | INFO     | __main__:<module>:57 - Persistence filepath: bot_data.pkl
+2025-05-09 13:08:49.943 | INFO     | __main__:main:107 - PicklePersistence initialized with file: bot_data.pkl
+2025-05-09 13:08:49.946 | CRITICAL | __main__:<module>:227 - Unhandled exception in main asyncio loop: 'ApplicationBuilder' object has no attribute 'drop_pending_updates'
+2025-05-09 13:08:49.946 | CRITICAL | __main__:<module>:228 - Error traceback: Traceback (most recent call last):
+  File "C:\Users\asus\Desktop\tt\Z1_GRAY_BOT\main.py", line 221, in <module>
+    asyncio.run(main())
+    ~~~~~~~~~~~^^^^^^^^
+  File "C:\Users\asus\AppData\Local\Programs\Python\Python313\Lib\asyncio\runners.py", line 195, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "C:\Users\asus\AppData\Local\Programs\Python\Python313\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\asus\AppData\Local\Programs\Python\Python313\Lib\asyncio\base_events.py", line 725, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "C:\Users\asus\Desktop\tt\Z1_GRAY_BOT\main.py", line 123, in main
+    builder = builder.drop_pending_updates(True)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'ApplicationBuilder' object has no attribute 'drop_pending_updates'
+
+2025-05-09 13:09:07.165 | INFO     | __main__:<module>:53 - BOT_TOKEN from .env ends with: ...0qIo
+2025-05-09 13:09:07.165 | INFO     | __main__:<module>:54 - Configured WEBHOOK_URL: https://ava-telegram-bot-1.onrender.com
+2025-05-09 13:09:07.165 | INFO     | __main__:<module>:55 - Configured WEBHOOK_PATH: /webhook
+2025-05-09 13:09:07.166 | INFO     | __main__:<module>:56 - Configured PORT: 10000
+2025-05-09 13:09:07.166 | INFO     | __main__:<module>:57 - Persistence filepath: bot_data.pkl
+2025-05-09 13:09:07.167 | INFO     | __main__:main:107 - PicklePersistence initialized with file: bot_data.pkl
+2025-05-09 13:09:07.170 | CRITICAL | __main__:<module>:227 - Unhandled exception in main asyncio loop: 'ApplicationBuilder' object has no attribute 'drop_pending_updates'
+2025-05-09 13:09:07.171 | CRITICAL | __main__:<module>:228 - Error traceback: Traceback (most recent call last):
+  File "C:\Users\asus\Desktop\tt\Z1_GRAY_BOT\main.py", line 221, in <module>
+    asyncio.run(main())
+    ~~~~~~~~~~~^^^^^^^^
+  File "C:\Users\asus\AppData\Local\Programs\Python\Python313\Lib\asyncio\runners.py", line 195, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "C:\Users\asus\AppData\Local\Programs\Python\Python313\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\asus\AppData\Local\Programs\Python\Python313\Lib\asyncio\base_events.py", line 725, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "C:\Users\asus\Desktop\tt\Z1_GRAY_BOT\main.py", line 123, in main
+    builder = builder.drop_pending_updates(True)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'ApplicationBuilder' object has no attribute 'drop_pending_updates'
+
+2025-05-09 13:09:33.206 | INFO     | __main__:<module>:53 - BOT_TOKEN from .env ends with: ...0qIo
+2025-05-09 13:09:33.207 | INFO     | __main__:<module>:54 - Configured WEBHOOK_URL: https://ava-telegram-bot-2.onrender.com
+2025-05-09 13:09:33.207 | INFO     | __main__:<module>:55 - Configured WEBHOOK_PATH: /webhook
+2025-05-09 13:09:33.208 | INFO     | __main__:<module>:56 - Configured PORT: 10000
+2025-05-09 13:09:33.208 | INFO     | __main__:<module>:57 - Persistence filepath: bot_data.pkl
+2025-05-09 13:09:33.209 | INFO     | __main__:main:107 - PicklePersistence initialized with file: bot_data.pkl
+2025-05-09 13:09:33.215 | CRITICAL | __main__:<module>:232 - Unhandled exception in main asyncio loop: 'ApplicationBuilder' object has no attribute 'drop_pending_updates'
+2025-05-09 13:09:33.215 | CRITICAL | __main__:<module>:233 - Error traceback: Traceback (most recent call last):
+  File "C:\Users\asus\Desktop\tt\Z1_GRAY_BOT\main.py", line 223, in <module>
+    asyncio.run(main())
+    ~~~~~~~~~~~^^^^^^^^
+  File "C:\Users\asus\AppData\Local\Programs\Python\Python313\Lib\asyncio\runners.py", line 195, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "C:\Users\asus\AppData\Local\Programs\Python\Python313\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\asus\AppData\Local\Programs\Python\Python313\Lib\asyncio\base_events.py", line 725, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "C:\Users\asus\Desktop\tt\Z1_GRAY_BOT\main.py", line 123, in main
+    builder = builder.drop_pending_updates(True)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'ApplicationBuilder' object has no attribute 'drop_pending_updates'
+
+2025-05-09 13:10:24.016 | INFO     | __main__:<module>:53 - BOT_TOKEN from .env ends with: ...0qIo
+2025-05-09 13:10:24.017 | INFO     | __main__:<module>:54 - Configured WEBHOOK_URL: https://ava-telegram-bot-2.onrender.com
+2025-05-09 13:10:24.017 | INFO     | __main__:<module>:55 - Configured WEBHOOK_PATH: /webhook
+2025-05-09 13:10:24.017 | INFO     | __main__:<module>:56 - Configured PORT: 10000
+2025-05-09 13:10:24.017 | INFO     | __main__:<module>:57 - Persistence filepath: bot_data.pkl
+2025-05-09 13:10:24.020 | INFO     | __main__:main:107 - PicklePersistence initialized with file: bot_data.pkl
+2025-05-09 13:10:24.662 | INFO     | __main__:main:152 - Main conversation handler (start_handler) added.
+2025-05-09 13:10:24.662 | INFO     | __main__:main:169 - Unknown command handler added.
+2025-05-09 13:10:26.621 | INFO     | __main__:main:177 - Using polling mode for local development
+2025-05-09 13:10:27.031 | INFO     | __main__:main:180 - Bot started polling. Press Ctrl+C to stop.
+2025-05-09 13:14:58.494 | ERROR    | handlers.step_1_init:start:63 - Error in start handler: Can't parse entities: character '-' is reserved and must be escaped with the preceding '\'
+2025-05-09 13:19:27.980 | INFO     | __main__:<module>:53 - BOT_TOKEN from .env ends with: ...0qIo
+2025-05-09 13:19:27.981 | INFO     | __main__:<module>:54 - Configured WEBHOOK_URL: https://ava-telegram-bot-2.onrender.com
+2025-05-09 13:19:27.981 | INFO     | __main__:<module>:55 - Configured WEBHOOK_PATH: /webhook
+2025-05-09 13:19:27.981 | INFO     | __main__:<module>:56 - Configured PORT: 10000
+2025-05-09 13:19:27.981 | INFO     | __main__:<module>:57 - Persistence filepath: bot_data.pkl
+2025-05-09 13:19:27.983 | INFO     | __main__:main:107 - PicklePersistence initialized with file: bot_data.pkl
+2025-05-09 13:19:28.617 | INFO     | __main__:main:152 - Main conversation handler (start_handler) added.
+2025-05-09 13:19:28.617 | INFO     | __main__:main:169 - Unknown command handler added.
+2025-05-09 13:19:30.532 | INFO     | __main__:main:177 - Using polling mode for local development
+2025-05-09 13:19:30.906 | INFO     | __main__:main:180 - Bot started polling. Press Ctrl+C to stop.
