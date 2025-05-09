@@ -16,6 +16,9 @@ MSG_STEP1_AUTH_CONFIRMED = (
     "🔹 SECURE\\_ENCRYPTION\\_LAYER: ESTABLISHED"
 )
 
+# 第一步到第二步的过渡消息
+MSG_TRANSITION_TO_STEP2 = "🧠 Calibrating trace sensors\\.\\.\\. \\[USER\\_ID: ACTIVE\\]"
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
     """Handles the /start command and initiates Step 1 sequence."""
     if not update.effective_user or not update.effective_chat:
@@ -73,15 +76,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
         )
         logger.info(f"Scheduled MSG_STEP1_SCAN_AUTONOMOUS for user {user_id_str}, delay 8.0s (4.5s after message 2)")
 
-        # 安排 Step ② 逻辑触发 (总延迟 9.0 秒, 即消息3之后1秒)
-        context.job_queue.run_once(
-            callback=trigger_step_2_logic,
-            when=timedelta(seconds=9.0),
-            data={'chat_id': chat_id, 'secure_id': secure_id, 'user_id': user_id_str},
-            name=f"step2_for_{user_id_str}_{chat_id}"
-        )
-        logger.info(f"Scheduled trigger_step_2_logic for user {user_id_str}, delay 9.0s (1.0s after message 3)")
-
         return AWAITING_STEP_2_SCAN_RESULTS # 返回下一个状态给 ConversationHandler
 
     except Exception as e:
@@ -134,9 +128,48 @@ async def send_message_3(context: ContextTypes.DEFAULT_TYPE) -> None:
         
         await context.bot.send_message(chat_id=chat_id, text=message_text, parse_mode='MarkdownV2')
         logger.info(f"Sent MSG_STEP1_SCAN_AUTONOMOUS to user {user_id}")
+        
+        # 安排过渡消息 (消息3后2.5秒)
+        context.job_queue.run_once(
+            callback=send_transition_message,
+            when=timedelta(seconds=2.5),
+            data={'chat_id': chat_id, 'secure_id': secure_id, 'user_id': user_id},
+            name=f"transition_for_{user_id}_{chat_id}"
+        )
+        logger.info(f"Scheduled transition message for user {user_id}, delay 2.5s after message 3")
+        
+        # 安排Step 2触发 (消息3后5.5秒)
+        context.job_queue.run_once(
+            callback=trigger_step_2_logic,
+            when=timedelta(seconds=5.5),
+            data={'chat_id': chat_id, 'secure_id': secure_id, 'user_id': user_id},
+            name=f"step2_for_{user_id}_{chat_id}"
+        )
+        logger.info(f"Scheduled trigger_step_2_logic for user {user_id}, delay 5.5s after message 3")
+        
     except Exception as e:
         user_id_err = context.job.data.get('user_id', 'unknown_in_msg3_err') if context.job else 'unknown_job_in_msg3_err'
         logger.error(f"Error in send_message_3 for user {user_id_err}: {e}", exc_info=True)
+
+async def send_transition_message(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """发送从Step 1到Step 2的过渡消息"""
+    try:
+        job_data = context.job.data
+        chat_id = job_data['chat_id']
+        user_id = job_data.get('user_id', 'unknown_in_transition')
+        
+        logger.info(f"Sending transition message to user {user_id}")
+        
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=MSG_TRANSITION_TO_STEP2,
+            parse_mode='MarkdownV2'
+        )
+        
+        logger.info(f"Transition message sent to user {user_id}")
+    except Exception as e:
+        user_id_err = context.job.data.get('user_id', 'unknown_in_transition_err') if context.job else 'unknown_job_in_transition_err'
+        logger.error(f"Error sending transition message for user {user_id_err}: {e}", exc_info=True)
 
 async def trigger_step_2_logic(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Job callback to trigger the logic for Step 2."""
