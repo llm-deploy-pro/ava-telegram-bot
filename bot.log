@@ -212,3 +212,16 @@ AttributeError: 'ApplicationBuilder' object has no attribute 'drop_pending_updat
 2025-05-09 13:19:28.617 | INFO     | __main__:main:169 - Unknown command handler added.
 2025-05-09 13:19:30.532 | INFO     | __main__:main:177 - Using polling mode for local development
 2025-05-09 13:19:30.906 | INFO     | __main__:main:180 - Bot started polling. Press Ctrl+C to stop.
+2025-05-09 13:30:54.841 | INFO     | __main__:signal_handler:99 - Signal SIGINT received. Initiating graceful shutdown...
+2025-05-09 13:30:54.842 | INFO     | __main__:main:205 - Shutting down bot...
+2025-05-09 13:30:56.499 | INFO     | __main__:main:209 - Bot shut down gracefully.
+2025-05-09 14:43:35.185 | INFO     | __main__:<module>:62 - BOT_TOKEN loaded, ends with: ...0qIo
+2025-05-09 14:43:35.186 | INFO     | __main__:<module>:64 - Running in POLLING mode (for local development)
+2025-05-09 14:43:35.187 | INFO     | __main__:<module>:69 - Persistence filepath: bot_data.pkl
+2025-05-09 14:43:35.190 | INFO     | __main__:main:173 - Starting Z1-Gray Bot (Polling Mode)...
+2025-05-09 14:43:35.191 | INFO     | __main__:main:180 - PicklePersistence will use file: bot_data.pkl
+2025-05-09 14:43:35.898 | INFO     | __main__:main:199 - Main conversation handler (start_handler) added.
+2025-05-09 14:43:35.898 | INFO     | __main__:main:212 - Global /cancel handler added.
+2025-05-09 14:43:35.898 | INFO     | __main__:main:216 - Unknown command handler added.
+2025-05-09 14:43:37.724 | INFO     | __main__:main:226 - Using polling mode for local development
+2025-05-09 14:43:38.074 | INFO     | __main__:main:230 - Bot started polling successfully. Press Ctrl+C to stop.

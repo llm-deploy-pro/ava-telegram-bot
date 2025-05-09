@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: z1-gray-bot
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    autoDeploy: true
+
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: WEBHOOK_URL
+        sync: false
+      - key: USE_WEBHOOK
+        sync: false
+      - key: ADMIN_CHAT_ID
+        sync: false
+      - key: LOG_FILE_PATH
+        sync: false
+      - key: PORT
+        sync: true # Render 自动注入 PORT 环境变量
