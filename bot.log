@@ -239,3 +239,13 @@ AttributeError: 'ApplicationBuilder' object has no attribute 'drop_pending_updat
 2025-05-09 15:12:25.376 | INFO     | __main__:main:257 - 正在优雅关闭 Bot...
 2025-05-09 15:12:27.105 | INFO     | __main__:main:266 - Bot 关闭序列完成
 2025-05-09 15:12:27.106 | INFO     | __main__:<module>:290 - 应用程序退出
+2025-05-09 15:25:52.350 | INFO     | __main__:<module>:63 - BOT_TOKEN 已加载，结尾为: ...0qIo
+2025-05-09 15:25:52.352 | INFO     | __main__:<module>:64 - 运行模式: 轮询模式 (polling)
+2025-05-09 15:25:52.352 | INFO     | __main__:<module>:69 - 持久化文件路径: bot_data.pkl
+2025-05-09 15:25:52.354 | INFO     | __main__:main:172 - 正在启动 Z1-Gray Bot (轮询模式)...
+2025-05-09 15:25:52.354 | INFO     | __main__:main:179 - PicklePersistence 将使用文件: bot_data.pkl
+2025-05-09 15:25:53.043 | INFO     | __main__:main:198 - 已添加主会话处理程序 (start_handler)
+2025-05-09 15:25:53.043 | INFO     | __main__:main:211 - 已添加全局 /cancel 处理程序
+2025-05-09 15:25:53.043 | INFO     | __main__:main:215 - 已添加未知命令处理程序
+2025-05-09 15:25:54.754 | INFO     | __main__:main:225 - 使用轮询模式进行本地开发
+2025-05-09 15:25:55.126 | INFO     | __main__:main:227 - Bot 已成功开始轮询。按 Ctrl+C 停止。
